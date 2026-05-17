@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mixid"
+version = "0.0.1"
+description = "Identify every track in a long-form DJ mix."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Emmanuel Okanlawon" }]
+keywords = ["dj", "audio", "fingerprinting", "music-information-retrieval", "tracklist"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Sound/Audio :: Analysis",
+]
+dependencies = [
+    "pyacoustid>=1.3.0",
+    "librosa>=0.10.2",
+    "pyloudnorm>=0.1.1",
+    "soundfile>=0.12.1",
+    "requests>=2.31.0",
+    "mwclient>=0.10.1",
+    "python-dotenv>=1.0.0",
+    "numpy>=1.26",
+    "scipy>=1.11",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-cov>=4.1", "ruff>=0.5.0"]
+enrich = [
+    "demucs>=4.0.1",
+    "openai-whisper>=20231117",
+    "laion-clap>=1.1.6",
+    "faiss-cpu>=1.7.4",
+]
+
+[project.scripts]
+mixid = "mixid.cli:main"
+
+[project.urls]
+Repository = "https://github.com/Skappy-Yolo/mixid"
+
+[tool.setuptools.packages.find]
+include = ["mixid*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
