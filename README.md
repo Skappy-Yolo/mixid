@@ -38,7 +38,29 @@ Outputs flag every unidentified segment with its timestamp so you know exactly w
 
 ## Quick start
 
-*Coming in Phase 10. See progress in commits.*
+**Tier-1 (your laptop, CPU only):**
+
+```bash
+git clone https://github.com/Skappy-Yolo/mixid
+cd mixid
+pip install -e .
+# Download fpcalc from https://github.com/acoustid/chromaprint/releases
+# and place fpcalc.exe (or fpcalc on macOS/Linux) into bin/
+cp .env.example .env  # then fill in your free AcoustID + Gemini keys
+python -m mixid path/to/your/mix.mp3
+```
+
+Outputs land in `outputs/<run-id>/` as `tracklist.json`, `mix.m3u`, and `mix.txt`. Unknown segments are explicitly flagged with timestamps.
+
+**Tier-2 (free Colab GPU, optional):**
+
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Skappy-Yolo/mixid/blob/main/notebooks/02_enrich_run.ipynb)
+
+Open the notebook, upload your mix, run all cells. Demucs separates the vocal stem, then pitch-swept Chromaprint + AcoustID identifies tracks that the noisy full-mix fingerprint missed. The notebook outputs `enriched_tracklist.json`. Merge into your Tier-1 run with:
+
+```bash
+python -m mixid.enrich.merge outputs/<run-id>/ ~/Downloads/enriched_tracklist.json
+```
 
 ## License
 
