@@ -94,11 +94,17 @@ def _gemini(system_prompt: str, user_prompt: str) -> str:
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     )
-    payload = {
-        "system_instruction": {"parts": [{"text": system_prompt}]},
-        "contents": [{"parts": [{"text": user_prompt}]}],
-        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 8192},
-    }
+    # IMPORTANT: keep payload minimal. Empirically, adding system_instruction
+    # OR generationConfig flips Gemini's classification into a paid-billing
+    # path that surfaces 'prepayment credits depleted' on free-tier keys.
+    # We fold the system prompt into the user prompt as an "Instructions:"
+    # preface instead, which the model honors without billing-path flipping.
+    combined = (
+        f"Instructions:\n{system_prompt}\n\n{user_prompt}"
+        if system_prompt.strip()
+        else user_prompt
+    )
+    payload = {"contents": [{"parts": [{"text": combined}]}]}
     body = _json.dumps(payload)
     proc = subprocess.run(
         [
