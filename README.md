@@ -1,0 +1,41 @@
+# MixID
+
+**Identify every track in a long-form DJ mix.**
+
+MixID ingests a 60–180 minute DJ mix — recorded at a party, ripped from YouTube/Mixcloud, or shared by another DJ — and returns an ordered tracklist with timestamps. Two-tier pipeline: fast local identification in under 2 minutes, optional cloud-GPU enrichment that runs while you make dinner.
+
+## Status
+
+Pre-alpha. Active development on `main`. See [the plan](https://github.com/Skappy-Yolo/mixid) for the staged build (~18 phases, ~40-60 commits).
+
+## Why
+
+There are three other DJ systems already in this toolkit: a YouTube downloader, a metadata indexer, and a playlist curator. None of them answer the question *"what songs are in this mix?"* MixID is that fourth piece.
+
+## How it works (short version)
+
+| Tier | Where it runs | Time | What it does |
+|---|---|---|---|
+| **Tier 1 — interactive** | Your laptop, CPU only | <2 min | URL shortcut → audio prep → hybrid segmentation → Chromaprint fingerprint with **pitch-shift sweep** → local library match → AcoustID remote → constrained LLM re-ranker → tracklist v1 |
+| **Tier 2 — async enrichment** | Free Colab/HF GPU | ~10-30 min | Demucs vocal stems → vocal-fingerprint sweep → Whisper-small lyrics → Genius/lyrics.ovh → CLAP embeddings + FAISS → ACRCloud trial → HMM beam-search smoothing → LLM candidate-generator (validated) → tracklist v2 |
+
+The pitch-shift sweep is the highest-ROI single change vs. naive fingerprinting (DJs pitch ±3-6% for beatmatching, which breaks Chromaprint silently).
+
+## Honest accuracy targets
+
+| Input type | Expected track-level recall |
+|---|---|
+| Own studio set (tracks in your library) | 90-95% |
+| YouTube / Mixcloud mix (public catalog) | 70-80% |
+| Phone party recording, clean | 60-72% |
+| Phone party recording, noisy crowd | 35-50% |
+
+Outputs flag every unidentified segment with its timestamp so you know exactly what to listen back to.
+
+## Quick start
+
+*Coming in Phase 10. See progress in commits.*
+
+## License
+
+[MIT](LICENSE)

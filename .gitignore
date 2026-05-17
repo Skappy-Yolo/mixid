@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+.env
+
+# Build / dist
+build/
+dist/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# MixID runtime artifacts
+data/
+outputs/
+bin/
+*.wav
+*.mp3
+*.m4a
+*.mp4
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Eval corpus (keep CSV ground-truth, ignore audio files)
+eval/audio/
