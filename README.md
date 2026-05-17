@@ -16,8 +16,12 @@ There are three other DJ systems already in this toolkit: a YouTube downloader, 
 
 | Tier | Where it runs | Time | What it does |
 |---|---|---|---|
-| **Tier 1 — interactive** | Your laptop, CPU only | <2 min | URL shortcut → audio prep → hybrid segmentation → Chromaprint fingerprint with **pitch-shift sweep** → local library match → AcoustID remote → constrained LLM re-ranker → tracklist v1 |
+| **Tier 1 — interactive** | Your laptop, CPU only | <2 min | URL shortcut → audio prep → hybrid segmentation → Chromaprint fingerprint with **pitch-shift sweep** → AcoustID remote → constrained LLM re-ranker → tracklist v1 |
 | **Tier 2 — async enrichment** | Free Colab/HF GPU | ~10-30 min | Demucs vocal stems → vocal-fingerprint sweep → Whisper-small lyrics → Genius/lyrics.ovh → CLAP embeddings + FAISS → ACRCloud trial → HMM beam-search smoothing → LLM candidate-generator (validated) → tracklist v2 |
+
+**Public APIs MixID matches against:** [AcoustID](https://acoustid.org/) (the ~50M-track open fingerprint database, free), [mixesdb.com](https://www.mixesdb.com/) (crowdsourced tracklists), [lyrics.ovh](https://lyrics.ovh/) + [Genius](https://genius.com/api-clients) (lyrics search), [ACRCloud](https://www.acrcloud.com/) free trial. You don't need any music files of your own — point MixID at any mix file or URL and it identifies tracks against these public sources.
+
+**Optional speed boost for DJs with their own catalogs:** if you build a local fingerprint index over your music library (one-time, ~1 sec per track), MixID checks it before hitting AcoustID. Saves API calls and runs instantly. Skip the index build entirely if you don't have a library.
 
 The pitch-shift sweep is the highest-ROI single change vs. naive fingerprinting (DJs pitch ±3-6% for beatmatching, which breaks Chromaprint silently).
 
