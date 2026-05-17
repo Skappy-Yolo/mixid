@@ -27,6 +27,8 @@ class NoProviderConfigured(RuntimeError):
 
 def complete(system_prompt: str, user_prompt: str) -> str:
     provider = (config.AI_PROVIDER or "").lower()
+    if provider == "claude_code":
+        return _claude_code(system_prompt, user_prompt)
     if provider == "gemini":
         return _gemini(system_prompt, user_prompt)
     if provider == "groq":
@@ -36,8 +38,51 @@ def complete(system_prompt: str, user_prompt: str) -> str:
     if provider == "anthropic":
         return _anthropic(system_prompt, user_prompt)
     raise NoProviderConfigured(
-        f"AI_PROVIDER='{provider}' not recognized. Use gemini, groq, ollama, or anthropic."
+        f"AI_PROVIDER='{provider}' not recognized. "
+        "Use claude_code (subscription), gemini, groq, ollama, or anthropic."
     )
+
+
+def _claude_code(system_prompt: str, user_prompt: str) -> str:
+    """Drive the local Claude Code CLI in headless mode.
+
+    No API key, no per-call billing, no rate-limit roulette — uses the
+    user's existing Claude Code subscription via `claude --print`. The
+    CLI is independent of any in-flight Claude Code session; each call
+    is a fresh subprocess.
+
+    Why this is the best provider for MixID's re-ranker specifically:
+    - Per-mix cost is bounded by the Claude Code plan, not per token
+    - Each call is independent (good — segments are independent)
+    - No quota-flipping payload weirdness (cf. Gemini's billing-path
+      classification)
+    - Always present on a machine that already has Claude Code installed
+    """
+    import shutil
+    import subprocess
+
+    cli = shutil.which("claude")
+    if cli is None:
+        raise NoProviderConfigured(
+            "Claude Code CLI not on PATH. Install from "
+            "https://docs.anthropic.com/claude-code, then `claude login`."
+        )
+
+    combined = (
+        f"Instructions:\n{system_prompt}\n\n{user_prompt}"
+        if system_prompt.strip()
+        else user_prompt
+    )
+    proc = subprocess.run(
+        [cli, "--print", "--output-format", "text"],
+        input=combined, capture_output=True, text=True, encoding="utf-8",
+        timeout=180,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"claude --print exit {proc.returncode}: {proc.stderr[:300]}"
+        )
+    return proc.stdout.strip()
 
 
 def _resolve_working_curl() -> str:

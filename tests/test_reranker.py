@@ -104,6 +104,53 @@ def test_rerank_applies_llm_picks(monkeypatch):
     assert "continuity" in results[0].rationale
 
 
+def test_claude_code_provider_invokes_cli(monkeypatch):
+    """ai_provider._claude_code shells out to `claude --print` correctly."""
+    import config as _config
+
+    monkeypatch.setattr(_config, "AI_PROVIDER", "claude_code")
+    monkeypatch.setattr(ai_provider.config, "AI_PROVIDER", "claude_code")
+
+    captured = {}
+
+    def fake_which(name):
+        if name == "claude":
+            return "/fake/path/claude"
+        return None
+
+    class FakeCompleted:
+        returncode = 0
+        stdout = "claude-code-replied"
+        stderr = ""
+
+    def fake_run(cmd, **kw):
+        captured["cmd"] = cmd
+        captured["input"] = kw.get("input", "")
+        return FakeCompleted()
+
+    import shutil, subprocess
+    monkeypatch.setattr(shutil, "which", fake_which)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    out = ai_provider.complete("be terse", "say hi")
+    assert out == "claude-code-replied"
+    assert captured["cmd"] == ["/fake/path/claude", "--print", "--output-format", "text"]
+    assert "be terse" in captured["input"]
+    assert "say hi" in captured["input"]
+
+
+def test_claude_code_provider_raises_when_cli_missing(monkeypatch):
+    import config as _config
+
+    monkeypatch.setattr(_config, "AI_PROVIDER", "claude_code")
+    monkeypatch.setattr(ai_provider.config, "AI_PROVIDER", "claude_code")
+    import shutil
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    import pytest as _pytest
+    with _pytest.raises(ai_provider.NoProviderConfigured, match="Claude Code CLI"):
+        ai_provider.complete("", "hi")
+
+
 def test_rerank_skips_segment_when_llm_picks_unknown(monkeypatch):
     def fake_llm(sys_p, usr_p):
         return '{"picks":[{"segment_index":0,"candidate_index":null,"rationale":"all wrong"}]}'

@@ -21,6 +21,8 @@ There are three other DJ systems already in this toolkit: a YouTube downloader, 
 
 **Public APIs MixID matches against:** [AcoustID](https://acoustid.org/) (the ~50M-track open fingerprint database, free), [mixesdb.com](https://www.mixesdb.com/) (crowdsourced tracklists), [lyrics.ovh](https://lyrics.ovh/) + [Genius](https://genius.com/api-clients) (lyrics search), [ACRCloud](https://www.acrcloud.com/) free trial. You don't need any music files of your own — point MixID at any mix file or URL and it identifies tracks against these public sources.
 
+**LLM re-ranker (optional, for disambiguating when multiple matchers disagree):** the default is **Claude Code CLI** (`AI_PROVIDER=claude_code`) which uses your existing subscription — no API key, no quota burn, fully automatic. Falls back to greedy when the LLM isn't reachable. Other providers (Gemini, Groq, Ollama, Anthropic API) are supported via `.env`.
+
 **Optional speed boost for DJs with their own catalogs:** if you build a local fingerprint index over your music library (one-time, ~1 sec per track), MixID checks it before hitting AcoustID. Saves API calls and runs instantly. Skip the index build entirely if you don't have a library.
 
 The pitch-shift sweep is the highest-ROI single change vs. naive fingerprinting (DJs pitch ±3-6% for beatmatching, which breaks Chromaprint silently).
