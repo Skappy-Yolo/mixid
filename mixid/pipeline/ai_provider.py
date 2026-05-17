@@ -39,28 +39,49 @@ def complete(system_prompt: str, user_prompt: str) -> str:
 
 
 def _gemini(system_prompt: str, user_prompt: str) -> str:
+    """Gemini via direct REST.
+
+    Note: we deliberately avoid the google-genai SDK because it routes
+    requests through a billing path that requires prepaid credits and
+    fails with RESOURCE_EXHAUSTED even on free-tier keys. Raw REST hits
+    the standard generativelanguage.googleapis.com endpoint and works
+    on any free key.
+    """
     if not config.GEMINI_API_KEY:
         raise NoProviderConfigured(
             "GEMINI_API_KEY not set. Get a free key at https://aistudio.google.com/app/apikey"
         )
-    try:
-        from google import genai
-        from google.genai import types
-    except ImportError as e:
-        raise ImportError("pip install google-genai") from e
+    import requests
 
-    client = genai.Client(api_key=config.GEMINI_API_KEY)
     model = config.AI_MODEL or "gemini-2.5-flash"
-    resp = client.models.generate_content(
-        model=model,
-        contents=user_prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            temperature=0.2,
-            max_output_tokens=8192,
-        ),
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     )
-    return resp.text
+    payload = {
+        "system_instruction": {"parts": [{"text": system_prompt}]},
+        "contents": [{"parts": [{"text": user_prompt}]}],
+        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 8192},
+    }
+    r = requests.post(
+        url,
+        headers={
+            "x-goog-api-key": config.GEMINI_API_KEY,
+            "Content-Type": "application/json",
+        },
+        json=payload,
+        timeout=60,
+    )
+    if not r.ok:
+        raise RuntimeError(f"Gemini HTTP {r.status_code}: {r.text[:300]}")
+    data = r.json()
+    # candidates[0].content.parts[0].text is the standard shape
+    candidates = data.get("candidates") or []
+    if not candidates:
+        raise RuntimeError(f"Gemini returned no candidates: {data}")
+    parts = (candidates[0].get("content") or {}).get("parts") or []
+    if not parts:
+        raise RuntimeError(f"Gemini candidate had no parts: {candidates[0]}")
+    return parts[0].get("text", "")
 
 
 def _groq(system_prompt: str, user_prompt: str) -> str:
