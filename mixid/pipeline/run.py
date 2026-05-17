@@ -34,6 +34,7 @@ from mixid.pipeline import (
     audio_prep,
     fingerprint,
     library_match,
+    reactive_lookup,
     reranker,
     sample_picker,
     segment as segment_mod,
@@ -223,6 +224,18 @@ def run(
             ac = acoustid_client.lookup_sweep(sweep)
             if ac is not None:
                 candidates.append(_acoustid_to_candidate(ac))
+
+        # 4e. Reactive lookup — whisper transcribe → multi-service lyric search
+        # → fingerprint-verify against preview. Only when nothing confident yet,
+        # because each call is ~5-10 sec (one Whisper invocation + ~8 API calls).
+        if (not candidates or max(c.score for c in candidates) < 0.85) and reactive_lookup._whisper_available():
+            rm = reactive_lookup.identify_reactive(s.samples, s.sample_rate)
+            if rm is not None:
+                candidates.append(reranker.Candidate(
+                    artist=rm.artist, title=rm.title, score=rm.score,
+                    source=rm.source,
+                    extra={"preview_url": rm.preview_url, "transcript": rm.transcript},
+                ))
 
         if not candidates:
             unknown_segments.append((seg.start_sec, seg.end_sec))

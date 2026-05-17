@@ -49,6 +49,10 @@ for _d in (DATA_DIR, OUTPUTS_DIR, BIN_DIR):
 # ── Tier-1 free APIs ────────────────────────────────────────────────────────
 ACOUSTID_API_KEY = os.getenv("ACOUSTID_API_KEY", "")
 
+# ── Spotify (free dev app, used to build a preview-fingerprint library) ────
+SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID", "")
+SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET", "")
+
 # ── Tier-2 free APIs (Colab/HF) ─────────────────────────────────────────────
 GENIUS_API_KEY = os.getenv("GENIUS_API_KEY", "")
 ACRCLOUD_KEY = os.getenv("ACRCLOUD_KEY", "")

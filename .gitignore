@@ -33,5 +33,8 @@ bin/*
 # Notebooks
 .ipynb_checkpoints/
 
+# Whisper model cache
+.cache/
+
 # Eval corpus (keep CSV ground-truth, ignore audio files)
 eval/audio/
