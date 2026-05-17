@@ -37,6 +37,7 @@ from mixid.pipeline import (
     reranker,
     sample_picker,
     segment as segment_mod,
+    smoother,
     url_shortcut,
 )
 from mixid.pipeline.consensus import TracklistTrack, collapse
@@ -247,6 +248,11 @@ def run(
     for pool in pools:
         if pool.segment_index not in reranked_idxs:
             unknown_segments.append((pool.start_sec, pool.end_sec))
+
+    # ── 5.5 Gap-fill smoother — rescue unknowns sandwiched by agreement ────
+    t = time.monotonic()
+    reranked, unknown_segments = smoother.smooth_gaps(reranked, unknown_segments)
+    timings["smoother"] = time.monotonic() - t
 
     # ── 6. Consensus collapse ──────────────────────────────────────────────
     tracks = collapse(reranked)
