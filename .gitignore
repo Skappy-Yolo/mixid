@@ -23,7 +23,8 @@ Thumbs.db
 # MixID runtime artifacts
 data/
 outputs/
-bin/
+bin/*
+!bin/README.md
 *.wav
 *.mp3
 *.m4a
