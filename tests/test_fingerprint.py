@@ -44,13 +44,24 @@ def _make_sample(sr: int = config.TARGET_SR, dur: float = 15.0) -> np.ndarray:
     return (chord + sweep + noise).astype(np.float32)
 
 
-def test_fingerprint_file_returns_nonempty(tmp_path):
+def test_fingerprint_file_returns_b64(tmp_path):
     sig = _make_sample()
     p = tmp_path / "sig.wav"
     sf.write(str(p), sig, config.TARGET_SR)
     fp = fingerprint.fingerprint_file(p)
     assert fp.duration_secs > 10
-    assert len(fp.fingerprint) > 50  # base64 fingerprint string
+    assert len(fp.b64) > 50  # base64 fingerprint string
+    assert fp.raw_hashes is None  # default mode is base64 only
+
+
+def test_fingerprint_file_raw_returns_hashes(tmp_path):
+    sig = _make_sample()
+    p = tmp_path / "sig.wav"
+    sf.write(str(p), sig, config.TARGET_SR)
+    fp = fingerprint.fingerprint_file(p, raw=True)
+    assert fp.raw_hashes is not None
+    assert len(fp.raw_hashes) > 5
+    assert fp.raw_hashes.dtype.name == "uint32"
 
 
 def test_pitch_sweep_produces_one_per_shift():
@@ -75,7 +86,7 @@ def test_pitch_sweep_produces_distinct_fingerprints():
         config.TARGET_SR,
         pitch_shifts_pct=(-6, 0, 6),
     )
-    fps = {fp.pitch_shift_percent: fp.fingerprint for fp in sweep.fingerprints}
+    fps = {fp.pitch_shift_percent: fp.b64 for fp in sweep.fingerprints}
     assert fps[-6] != fps[0]
     assert fps[6] != fps[0]
     assert fps[-6] != fps[6]

@@ -25,20 +25,28 @@ import config
 
 @dataclass
 class Fingerprint:
+    """One Chromaprint fingerprint, possibly at a pitch shift.
+
+    Carries both representations: `b64` for AcoustID submission and
+    `raw_hashes` for local Hamming-distance matching. Either may be
+    empty depending on how the fingerprint was generated; matchers
+    that need a specific form check first.
+    """
     pitch_shift_percent: int  # 0 for original; -6..+6 for shifts
     duration_secs: float
-    fingerprint: str  # base64 Chromaprint string
+    b64: str = ""                   # Chromaprint base64 — AcoustID input
+    raw_hashes: np.ndarray | None = None  # uint32 hashes — for local match
 
 
 @dataclass
 class FingerprintSweep:
-    """All variants fingerprinted for one sample. Use the matcher's best score."""
+    """All pitch variants fingerprinted for one sample. Matchers take the best."""
     fingerprints: list[Fingerprint]
     sample_start_sec_in_mix: float
 
     @property
     def base(self) -> Fingerprint:
-        """The unshifted (0%) fingerprint — used for naive comparison."""
+        """The unshifted (0%) fingerprint."""
         for fp in self.fingerprints:
             if fp.pitch_shift_percent == 0:
                 return fp
@@ -54,22 +62,25 @@ def _ensure_fpcalc() -> Path:
     return config.FPCALC_EXE
 
 
-def _run_fpcalc(wav_path: Path) -> Fingerprint:
+def _run_fpcalc(wav_path: Path, raw: bool = False, length_secs: int = 120) -> Fingerprint:
+    """Invoke fpcalc on wav_path. raw=True → uint32 hashes; raw=False → base64."""
     fpcalc = _ensure_fpcalc()
-    res = subprocess.run(
-        [str(fpcalc), "-json", "-length", "120", str(wav_path)],
-        capture_output=True, text=True, timeout=30,
-    )
+    args = [str(fpcalc), "-json", "-length", str(length_secs)]
+    if raw:
+        args.insert(1, "-raw")
+    args.append(str(wav_path))
+    res = subprocess.run(args, capture_output=True, text=True, timeout=30)
     if res.returncode != 0:
         raise RuntimeError(f"fpcalc failed: {res.stderr}")
-    import json
+    import json as _json
 
-    data = json.loads(res.stdout)
-    return Fingerprint(
-        pitch_shift_percent=0,
-        duration_secs=float(data["duration"]),
-        fingerprint=str(data["fingerprint"]),
-    )
+    data = _json.loads(res.stdout)
+    fp = Fingerprint(pitch_shift_percent=0, duration_secs=float(data["duration"]))
+    if raw:
+        fp.raw_hashes = np.asarray(data["fingerprint"], dtype=np.uint32)
+    else:
+        fp.b64 = str(data["fingerprint"])
+    return fp
 
 
 def _pitch_shift_samples(samples: np.ndarray, sr: int, percent: float) -> np.ndarray:
@@ -90,16 +101,28 @@ def fingerprint_sample(
     sr: int,
     sample_start_sec_in_mix: float = 0.0,
     pitch_shifts_pct: tuple[int, ...] = config.PITCH_SWEEP_PERCENT,
+    include_b64: bool = True,
 ) -> FingerprintSweep:
-    """Fingerprint one audio sample at every pitch shift in `pitch_shifts_pct`."""
+    """Fingerprint one audio sample at every pitch shift in `pitch_shifts_pct`.
+
+    Computes raw uint32 hashes for every variant (used by the local matcher).
+    Also computes base64 form when include_b64=True (used by AcoustID submission).
+    """
     sweep: list[Fingerprint] = []
     with tempfile.TemporaryDirectory(prefix="mixid_fp_") as tmp:
         for pct in pitch_shifts_pct:
             shifted = samples if pct == 0 else _pitch_shift_samples(samples, sr, pct)
             wav_path = Path(tmp) / f"sample_{pct:+d}.wav"
             sf.write(str(wav_path), shifted, sr, subtype="PCM_16")
-            fp = _run_fpcalc(wav_path)
-            fp.pitch_shift_percent = pct
+            fp_raw = _run_fpcalc(wav_path, raw=True)
+            fp = Fingerprint(
+                pitch_shift_percent=pct,
+                duration_secs=fp_raw.duration_secs,
+                raw_hashes=fp_raw.raw_hashes,
+            )
+            if include_b64:
+                fp_b64 = _run_fpcalc(wav_path, raw=False)
+                fp.b64 = fp_b64.b64
             sweep.append(fp)
     return FingerprintSweep(
         fingerprints=sweep,
@@ -107,9 +130,11 @@ def fingerprint_sample(
     )
 
 
-def fingerprint_file(path: Path | str) -> Fingerprint:
-    """Convenience: fingerprint a whole audio file (no pitch sweep).
+def fingerprint_file(path: Path | str, raw: bool = False) -> Fingerprint:
+    """Fingerprint a whole audio file (no pitch sweep).
 
-    Used by the library indexer to build the per-track reference fingerprints.
+    raw=False (default) → base64 form, used by AcoustID submission.
+    raw=True            → uint32 hash array, used by the library indexer
+                          and the local Hamming-distance matcher.
     """
-    return _run_fpcalc(Path(path))
+    return _run_fpcalc(Path(path), raw=raw)

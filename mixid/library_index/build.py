@@ -36,7 +36,8 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             id              INTEGER PRIMARY KEY,
             filepath        TEXT UNIQUE NOT NULL,
             duration_secs   REAL,
-            fingerprint_b64 TEXT NOT NULL,
+            fingerprint_raw BLOB NOT NULL,
+            n_hashes        INTEGER NOT NULL,
             title           TEXT NOT NULL DEFAULT '',
             artist          TEXT NOT NULL DEFAULT '',
             album           TEXT NOT NULL DEFAULT '',
@@ -100,15 +101,27 @@ def build(
         if not Path(filepath).exists():
             continue
         try:
-            fp = fp_mod.fingerprint_file(filepath)
+            fp = fp_mod.fingerprint_file(filepath, raw=True)
         except Exception as e:
             print(f"  skip {filepath}: {e}", file=sys.stderr)
             continue
+        if fp.raw_hashes is None or len(fp.raw_hashes) == 0:
+            print(f"  skip {filepath}: empty fingerprint", file=sys.stderr)
+            continue
         conn.execute(
             "INSERT OR REPLACE INTO tracks "
-            "(filepath, duration_secs, fingerprint_b64, title, artist, album, indexed_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (filepath, fp.duration_secs, fp.fingerprint, title, artist, album, time.time()),
+            "(filepath, duration_secs, fingerprint_raw, n_hashes, title, artist, album, indexed_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                filepath,
+                fp.duration_secs,
+                fp.raw_hashes.tobytes(),
+                int(len(fp.raw_hashes)),
+                title,
+                artist,
+                album,
+                time.time(),
+            ),
         )
         indexed += 1
         if indexed % 50 == 0:
