@@ -19,7 +19,14 @@ There are three other DJ systems already in this toolkit: a YouTube downloader, 
 | **Tier 1 — interactive** | Your laptop, CPU only | <2 min | URL shortcut → audio prep → hybrid segmentation → Chromaprint fingerprint with **pitch-shift sweep** → AcoustID remote → constrained LLM re-ranker → tracklist v1 |
 | **Tier 2 — async enrichment** | Free Colab/HF GPU | ~10-30 min | Demucs vocal stems → vocal-fingerprint sweep → Whisper-small lyrics → Genius/lyrics.ovh → CLAP embeddings + FAISS → ACRCloud trial → HMM beam-search smoothing → LLM candidate-generator (validated) → tracklist v2 |
 
-**Public APIs MixID matches against:** [AcoustID](https://acoustid.org/) (the ~50M-track open fingerprint database, free), [mixesdb.com](https://www.mixesdb.com/) (crowdsourced tracklists), [lyrics.ovh](https://lyrics.ovh/) + [Genius](https://genius.com/api-clients) (lyrics search), [ACRCloud](https://www.acrcloud.com/) free trial. You don't need any music files of your own — point MixID at any mix file or URL and it identifies tracks against these public sources.
+**Public APIs MixID matches against (all free, no paid trials):**
+- [AcoustID](https://acoustid.org/) — open fingerprint DB backed by MusicBrainz (~50M tracks; sparse coverage for niche / edited / Afrobeats)
+- [iTunes Search](https://performance-partners.apple.com/search-api) — Apple's catalog with 30-sec previews, no auth
+- [Deezer](https://developers.deezer.com/api) — ~90M tracks with free 30-sec previews, no auth
+- [mixesdb.com](https://www.mixesdb.com/) MediaWiki — crowdsourced tracklists for known DJ mixes
+- [Genius](https://genius.com/api-clients) — lyric search (free key adds higher rate)
+
+The **reactive lookup path** is what lets MixID identify tracks that aren't in any pre-built cache: Whisper-tiny transcribes a 12-sec vocal snippet → fuzzy search across iTunes + Deezer for that phrase → download each candidate's preview → fingerprint-match. Works for any track with audible vocals, regardless of genre or how niche.
 
 **LLM re-ranker (optional, for disambiguating when multiple matchers disagree):** the default is **Claude Code CLI** (`AI_PROVIDER=claude_code`) which uses your existing subscription — no API key, no quota burn, fully automatic. Falls back to greedy when the LLM isn't reachable. Other providers (Gemini, Groq, Ollama, Anthropic API) are supported via `.env`.
 
