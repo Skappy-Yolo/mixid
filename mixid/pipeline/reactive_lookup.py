@@ -48,10 +48,29 @@ class ReactiveMatch:
     transcript: str = ""
 
 
-# Score floor for accepting a reactive hit. Conservative because we're
-# matching a 12-sec query against a 30-sec preview that may not even
-# overlap in time within the source track.
-_MIN_MATCH_SCORE = 0.55
+# Score floor for accepting a reactive hit.
+#
+# Chromaprint Hamming-distance has a random baseline of ~0.50 (two
+# random 32-bit hashes differ in ~16 of 32 bits on average). Anything
+# 0.50-0.70 is mostly noise; real matches sit at 0.85+. We use 0.80 as
+# a hard floor — a calibrated choice from observing 43 false positives
+# at 0.55-0.65 on a Nigerian party recording matched against Disney/
+# country/kids tracks. Better to under-match than report nonsense.
+_MIN_MATCH_SCORE = 0.80
+
+# Minimum transcript length before we treat it as a real lyric snippet.
+# "I'm going", "let go", "thank you" are sub-5-word phrases that match
+# thousands of tracks fuzzily and produce noise hits.
+_MIN_TRANSCRIPT_WORDS = 5
+
+# Common short-content English phrases that match too many tracks to be
+# useful — filter these before searching.
+_TRANSCRIPT_STOPLIST = {
+    "i'm going", "i am going", "let go", "let me go", "thank you", "yeah yeah",
+    "you know", "i don't know", "come on", "i love you", "i want you",
+    "all right", "right now", "right there", "go go go", "oh yeah", "i'm sorry",
+    "yes yes", "no no", "i don't care", "i'm not", "you can do it",
+}
 
 
 # ── Transcription ──────────────────────────────────────────────────────────
@@ -193,8 +212,14 @@ def identify_reactive(
         log.warning("transcription failed: %s", e)
         return None
     phrase = _clean_phrase(text)
-    if len(phrase) < 8:
-        return None  # not enough lyric to search on
+    if len(phrase.split()) < _MIN_TRANSCRIPT_WORDS:
+        return None  # too short to be a distinctive lyric
+    if phrase.lower().strip() in _TRANSCRIPT_STOPLIST:
+        return None  # common filler — matches too many tracks fuzzily
+    # Also reject if the phrase is just stoplist content
+    words = set(phrase.lower().split())
+    if len(words) < 4:  # very few unique words = likely repetitive chant
+        return None
 
     # Fingerprint the query once (raw uint32 hashes)
     query_fp = fp_mod.fingerprint_sample(
@@ -211,19 +236,26 @@ def identify_reactive(
         preview_hashes = _fingerprint_url(cand["preview_url"])
         if preview_hashes is None or len(preview_hashes) == 0:
             continue
-        # Pick the best score across our 7 pitch variants
-        best_score = 0.0
+        # Compute score across all 7 pitch variants. Use the max but ALSO
+        # require the spread to be sane — if max is high but median is at
+        # random-noise (~0.5), it's almost certainly a coincidence.
+        scores = []
         for variant in query_fp.fingerprints:
             if variant.raw_hashes is None:
                 continue
             score, _ = _score_query_vs_library(variant.raw_hashes, preview_hashes)
-            if score > best_score:
-                best_score = score
-        if best_score < _MIN_MATCH_SCORE:
+            scores.append(score)
+        if not scores:
             continue
-        if best is None or best_score > best.score:
+        max_score = max(scores)
+        median_score = sorted(scores)[len(scores) // 2]
+        # A real match has BOTH max and median above their respective floors.
+        # Noise has high max from luck but median stuck near 0.5.
+        if max_score < _MIN_MATCH_SCORE or median_score < 0.65:
+            continue
+        if best is None or max_score > best.score:
             best = ReactiveMatch(
-                score=best_score,
+                score=max_score,
                 artist=cand["artist"],
                 title=cand["title"],
                 source=cand["source"],
