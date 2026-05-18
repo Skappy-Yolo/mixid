@@ -38,6 +38,7 @@ from mixid.pipeline import (
     reranker,
     sample_picker,
     segment as segment_mod,
+    shazam_client,
     smoother,
     url_shortcut,
 )
@@ -77,6 +78,16 @@ def _acoustid_to_candidate(m: acoustid_client.AcoustIDMatch) -> reranker.Candida
             "recording_id": m.recording_id,
             "pitch_shift_pct": m.best_pitch_shift_percent,
         },
+    )
+
+
+def _shazam_to_candidate(m: shazam_client.ShazamMatch) -> reranker.Candidate:
+    return reranker.Candidate(
+        artist=m.artist,
+        title=m.title,
+        score=m.score,        # Shazam returns a match (binary); we trust it
+        source="shazam",
+        extra={"shazam_key": m.shazam_key, "isrc": m.isrc},
     )
 
 
@@ -219,13 +230,22 @@ def run(
             lib_matches = library_match.match_sweep(sweep, top_k=3)
             candidates.extend(_library_to_candidate(m) for m in lib_matches)
 
-        # 4d. AcoustID remote (skipped when no API key)
+        # 4d. Shazam (covers electronic / Afrobeats / niche far better than
+        # AcoustID's MusicBrainz catalog). Unofficial shazamio client — no
+        # API key, ~1 req/sec throttled.
+        if not candidates or max(c.score for c in candidates) < 0.85:
+            sh = shazam_client.recognize_sample(s.samples, s.sample_rate)
+            if sh is not None:
+                candidates.append(_shazam_to_candidate(sh))
+
+        # 4e. AcoustID remote (skipped when no API key). Lower priority than
+        # Shazam — AcoustID's free DB is smaller and lacks edits/niche tracks.
         if not candidates or max(c.score for c in candidates) < 0.85:
             ac = acoustid_client.lookup_sweep(sweep)
             if ac is not None:
                 candidates.append(_acoustid_to_candidate(ac))
 
-        # 4e. Reactive lookup — whisper transcribe → multi-service lyric search
+        # 4f. Reactive lookup — whisper transcribe → multi-service lyric search
         # → fingerprint-verify against preview. Only when nothing confident yet,
         # because each call is ~5-10 sec (one Whisper invocation + ~8 API calls).
         if (not candidates or max(c.score for c in candidates) < 0.85) and reactive_lookup._whisper_available():
