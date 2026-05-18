@@ -26,6 +26,13 @@ def main(argv: list[str] | None = None) -> int:
         "(default: outputs/<random run id>/).",
     )
     parser.add_argument(
+        "--with-demucs",
+        action="store_true",
+        help="After Tier-1, run Demucs stem separation on unidentified segments "
+        "and retry Shazam on the no-vocals stem. Slow (CPU Demucs is ~15-30s "
+        "per segment) but rescues hits buried under crowd noise.",
+    )
+    parser.add_argument(
         "-v", "--verbose",
         action="store_true",
         help="Verbose logging.",
@@ -37,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
-    result = run_mod.run(args.input, output_dir=args.output_dir)
+    result = run_mod.run(args.input, output_dir=args.output_dir, with_demucs=args.with_demucs)
 
     # Print a short summary to stdout so callers piping output get something useful
     print(f"\nMixID — {len(result.tracks)} tracks, {len(result.unknown_segments)} unidentified")

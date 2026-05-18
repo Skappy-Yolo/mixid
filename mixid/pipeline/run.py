@@ -34,6 +34,7 @@ from mixid.pipeline import (
     audio_prep,
     fingerprint,
     library_match,
+    local_demucs,
     reactive_lookup,
     reranker,
     sample_picker,
@@ -152,9 +153,69 @@ def _write_all_outputs(
     )
 
 
+def _demucs_retry_for_unknowns(
+    prepared: audio_prep.PreparedAudio,
+    pools: list[reranker.SegmentCandidates],
+    unknown_segments: list[tuple[float, float]],
+    library_lookup: dict[str, str],
+) -> tuple[list[reranker.SegmentCandidates], list[tuple[float, float]]]:
+    """Run Demucs on segments that produced no confident candidate.
+
+    For each unknown segment:
+      1. Extract the 16-sec snippet from the prepared audio
+      2. Demucs htdemucs_ft → vocals/drums/bass/other + no_vocals composite
+      3. Try Shazam on the 'no_vocals' stem (less crowd contamination)
+      4. If hit: append a SegmentCandidates pool for it
+
+    Returns (added_pools, remaining_unknowns).
+    """
+    if not local_demucs.is_available():
+        log.warning("--with-demucs requested but demucs not installed; skipping")
+        return [], unknown_segments
+    if not unknown_segments:
+        return [], []
+
+    added_pools: list[reranker.SegmentCandidates] = []
+    remaining: list[tuple[float, float]] = []
+    sr = prepared.sample_rate
+
+    for i, (us, ue) in enumerate(unknown_segments):
+        snippet = prepared.samples[int(us * sr) : int(ue * sr)]
+        if len(snippet) < int(8 * sr):
+            remaining.append((us, ue))
+            continue
+        log.info("demucs %d/%d: segment %.1f-%.1fs", i + 1, len(unknown_segments), us, ue)
+        try:
+            stems = local_demucs.separate_at_sr(snippet, sr, output_sr=sr)
+        except Exception as e:
+            log.warning("demucs failed on %.1f-%.1fs: %s", us, ue, e)
+            remaining.append((us, ue))
+            continue
+        if stems is None or "no_vocals" not in stems:
+            remaining.append((us, ue))
+            continue
+        sh = shazam_client.recognize_sample(stems["no_vocals"], sr)
+        if sh is None:
+            # also try the vocals stem in case it's a vocal-heavy track
+            sh = shazam_client.recognize_sample(stems.get("vocals", snippet), sr)
+        if sh is None:
+            remaining.append((us, ue))
+            continue
+        cand = _shazam_to_candidate(sh)
+        cand.source = "shazam+demucs"
+        added_pools.append(reranker.SegmentCandidates(
+            segment_index=-(i + 1),  # synthetic index
+            start_sec=us,
+            end_sec=ue,
+            candidates=[cand],
+        ))
+    return added_pools, remaining
+
+
 def run(
     input_path_or_url: str,
     output_dir: Path | None = None,
+    with_demucs: bool = False,
 ) -> MixIDResult:
     """Run the Tier-1 pipeline end-to-end. Writes outputs and returns the result."""
     t_start = time.monotonic()
@@ -213,14 +274,20 @@ def run(
     library_lookup = _build_library_lookup()
     library_available = bool(library_lookup)
     for idx, seg in enumerate(segments):
-        s = sample_picker.pick(prepared.samples, prepared.sample_rate, seg)
-        if s is None:
+        # Multi-position picks: up to N samples per segment. Shazam can miss a
+        # 16-sec window that lands on a transition; trying 2-3 positions cheaply
+        # rescues those misses.
+        samples_in_seg = sample_picker.pick_top_k(
+            prepared.samples, prepared.sample_rate, seg,
+            k=config.SHAZAM_ATTEMPTS_PER_SEGMENT,
+        )
+        if not samples_in_seg:
             continue
+        s = samples_in_seg[0]  # primary pick — used for fingerprint & non-Shazam matchers
         sweep = fingerprint.fingerprint_sample(
             s.samples,
             s.sample_rate,
             sample_start_sec_in_mix=s.start_sec_in_mix,
-            # Use the configured sweep; can be narrowed via config if too slow
             include_b64=True,
         )
         candidates: list[reranker.Candidate] = []
@@ -230,13 +297,13 @@ def run(
             lib_matches = library_match.match_sweep(sweep, top_k=3)
             candidates.extend(_library_to_candidate(m) for m in lib_matches)
 
-        # 4d. Shazam (covers electronic / Afrobeats / niche far better than
-        # AcoustID's MusicBrainz catalog). Unofficial shazamio client — no
-        # API key, ~1 req/sec throttled.
+        # 4d. Shazam — try ALL picked positions until one hits.
         if not candidates or max(c.score for c in candidates) < 0.85:
-            sh = shazam_client.recognize_sample(s.samples, s.sample_rate)
-            if sh is not None:
-                candidates.append(_shazam_to_candidate(sh))
+            for s_try in samples_in_seg:
+                sh = shazam_client.recognize_sample(s_try.samples, s_try.sample_rate)
+                if sh is not None:
+                    candidates.append(_shazam_to_candidate(sh))
+                    break  # first hit wins; don't waste throttle budget
 
         # 4e. AcoustID remote (skipped when no API key). Lower priority than
         # Shazam — AcoustID's free DB is smaller and lacks edits/niche tracks.
@@ -281,6 +348,20 @@ def run(
     for pool in pools:
         if pool.segment_index not in reranked_idxs:
             unknown_segments.append((pool.start_sec, pool.end_sec))
+
+    # ── 5.25 Demucs noise-removal retry for unknowns (opt-in, slow) ────────
+    if with_demucs and unknown_segments:
+        t = time.monotonic()
+        log.info("Demucs retry on %d unknown segments — may take several minutes", len(unknown_segments))
+        added_pools, unknown_segments = _demucs_retry_for_unknowns(
+            prepared, pools, unknown_segments, library_lookup
+        )
+        timings["demucs_retry"] = time.monotonic() - t
+        # Re-rank the new pools too
+        if added_pools:
+            extra = reranker.rerank(added_pools)
+            reranked.extend(extra)
+            log.info("demucs added %d identifications", len(extra))
 
     # ── 5.5 Gap-fill smoother — rescue unknowns sandwiched by agreement ────
     t = time.monotonic()
