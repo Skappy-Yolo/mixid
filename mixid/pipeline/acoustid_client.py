@@ -41,6 +41,10 @@ class AcoustIDMatch:
 
 
 _CONFIDENT_FLOOR = 0.85
+# Hard reject AcoustID matches below this score — observed false positives
+# at 0.55 (Anthony Robbins self-help audiobook, violin concertos, etc.)
+# when noisy phone audio randomly matches a niche MusicBrainz entry.
+_ACCEPT_FLOOR = 0.80
 _LAST_CALL_AT: float = 0.0
 _MIN_INTERVAL_SECS = 0.34          # 3 req/sec with key; 1 req/sec without (see _throttle)
 
@@ -111,6 +115,8 @@ def lookup_sweep(
         match = _parse_response(resp, fp.pitch_shift_percent)
         if match is None:
             continue
+        if match.score < _ACCEPT_FLOOR:
+            continue  # too low to trust — same random-noise floor we use elsewhere
         if best is None or match.score > best.score:
             best = match
         if best.score >= confident_floor:
