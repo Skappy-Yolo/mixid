@@ -32,6 +32,10 @@
     input[type=file] { display: none; }
     input[type=url], input[type=text] { width: 100%; padding: 12px; background: #0a0a0c; border: 1px solid var(--border); border-radius: 10px; color: var(--ink); font-size: 14px; }
     input[type=url]:focus, input[type=text]:focus { outline: none; border-color: var(--accent); }
+    .platform-pills { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .pill { font-size: 11px; padding: 4px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+    .pill.ok { color: var(--good); border-color: rgba(90,207,128,0.2); }
+    .pill.bad { color: var(--warn); border-color: rgba(246,161,74,0.2); cursor: help; }
     .row { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
     button.go { background: var(--accent); color: #111; border: none; border-radius: 10px; padding: 12px 20px; font-weight: 700; cursor: pointer; font-size: 15px; }
     button.go:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -93,28 +97,36 @@
   <div class="wrap">
     <header>
       <h1>Mix<span class="dot">ID</span></h1>
-      <div class="tagline">Find every song in a DJ mix. No login. Free.</div>
+      <div class="tagline">Paste a mix URL or upload a recording — get the full tracklist. No login. Free.</div>
     </header>
 
     <main>
       <div class="card">
         <div class="tabs">
-          <button id="tab-file" class="tab active" type="button">Upload file</button>
-          <button id="tab-url" class="tab" type="button">Paste URL</button>
+          <button id="tab-url" class="tab active" type="button">Paste mix URL</button>
+          <button id="tab-file" class="tab" type="button">Upload file</button>
         </div>
 
-        <div id="pane-file">
+        <div id="pane-url">
+          <input type="url" id="url" placeholder="paste your mix URL — YouTube / SoundCloud / Mixcloud / Audiomack" />
+          <div class="platform-pills">
+            <span class="pill ok" title="Supported">▶ YouTube</span>
+            <span class="pill ok" title="Supported">☁ SoundCloud</span>
+            <span class="pill ok" title="Supported">🎚 Mixcloud</span>
+            <span class="pill ok" title="Supported">♪ Audiomack</span>
+            <span class="pill bad" title="Spotify protects its audio — paste the YouTube/SoundCloud version instead">🟢 Spotify (not supported)</span>
+          </div>
+          <p style="font-size:11px;color:var(--muted);margin:6px 0 0;">If your mix is on Spotify or Apple Music, paste the YouTube / SoundCloud / Mixcloud / Audiomack mirror — those platforms let us fetch audio automatically.</p>
+          <p id="spotify-warn" class="hidden" style="font-size:12px;color:var(--warn);margin:8px 0 0;">Spotify locks their audio — we can't fetch it automatically. Most DJ mixes are also on SoundCloud, Mixcloud, or YouTube. Try one of those.</p>
+        </div>
+
+        <div id="pane-file" class="hidden">
           <label class="drop" id="drop" for="file">
             <p><strong>Drop a mix here</strong> or tap to pick</p>
             <p>mp3, m4a, wav, mp4, flac, ogg</p>
             <p id="filename" style="color:var(--accent); display:none;"></p>
           </label>
           <input type="file" id="file" accept="audio/*,video/*" />
-        </div>
-
-        <div id="pane-url" class="hidden">
-          <input type="url" id="url" placeholder="https://youtube.com / soundcloud / mixcloud / audiomack" />
-          <p style="font-size:11px;color:var(--muted);margin:8px 0 0;">Supported: YouTube, SoundCloud, Mixcloud, Audiomack.</p>
         </div>
 
         <div class="row">
@@ -232,7 +244,7 @@
     const resultcard = $('resultcard'), tracklist = $('tracklist'), meta = $('meta'), downloads = $('downloads');
     const donateModal = $('donateModal');
 
-    let currentTab = 'file';
+    let currentTab = 'url';
     let lastResultJob = null;
     let spotifyConfigured = false;
 
@@ -260,7 +272,13 @@
       if (f) { filenameDisplay.textContent = f.name; filenameDisplay.style.display = 'block'; }
       validate();
     });
-    urlInput.addEventListener('input', validate);
+    urlInput.addEventListener('input', () => {
+      validate();
+      // Friendly Spotify warning — don't disable the button, just warn
+      const u = (urlInput.value || '').toLowerCase();
+      const spotify = u.includes('spotify.com') || u.includes('open.spotify');
+      $('spotify-warn').classList.toggle('hidden', !spotify);
+    });
     ['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('hover'); }));
     ['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('hover'); }));
     drop.addEventListener('drop', e => {
