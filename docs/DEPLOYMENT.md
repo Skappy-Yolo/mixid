@@ -48,17 +48,31 @@ typical 1-hour DJ mix.
 
 You now have an empty Space at `https://huggingface.co/spaces/<your-username>/mixid`.
 
-### Step 2 — Push the code
+### Step 2 — Push the code (one command)
 
-```bash
+```powershell
 cd "$HOME\OneDrive\Documents\MixID"
-git remote add space https://huggingface.co/spaces/<your-username>/mixid
-git push space main
+
+# One-time: add the HF remote
+git remote add hf https://huggingface.co/spaces/<your-username>/mixid
+
+# Deploy (and re-deploy whenever you want)
+.\scripts\deploy-hf.ps1
 ```
 
-Note: the Space reads the `huggingface_space/` subdirectory by default
-because the README and Dockerfile live there. If you want it at the repo
-root, copy those two files up.
+(Bash users: `bash scripts/deploy-hf.sh` instead.)
+
+The deploy script handles the file-layout difference between GitHub
+(README at root is the project README) and HF Spaces (README at root
+must have the HF YAML front-matter). It uses a temporary git worktree
+on a dedicated `hf-deploy` branch — your normal working checkout never
+moves, so you can run the script even with uncommitted work in progress.
+
+When git prompts for credentials:
+- Username: your HF username (e.g. `Skappy-Yolo`)
+- Password: an HF **access token** with `Write` scope (NOT your account
+  password). Generate one at <https://huggingface.co/settings/tokens>.
+  Git's credential manager caches it after the first successful push.
 
 ### Step 3 — Configure secrets
 

@@ -36,5 +36,8 @@ bin/*
 # Whisper model cache
 .cache/
 
+# Temporary worktree used by scripts/deploy-hf.* (never commit this)
+.hf-deploy-worktree/
+
 # Eval corpus (keep CSV ground-truth, ignore audio files)
 eval/audio/
