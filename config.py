@@ -41,7 +41,40 @@ BIN_DIR = BASE_DIR / "bin"
 
 FINGERPRINTS_DB = DATA_DIR / "fingerprints.db"
 EMBEDDINGS_INDEX = DATA_DIR / "embeddings.faiss"
-FPCALC_EXE = BIN_DIR / ("fpcalc.exe" if os.name == "nt" else "fpcalc")
+
+
+def _resolve_fpcalc() -> Path:
+    """Find the Chromaprint fpcalc binary across deployment shapes.
+
+    Search order:
+      1. MIXID_FPCALC_PATH env var (set explicitly — Dockerfile, custom installs)
+      2. BIN_DIR / fpcalc[.exe] (laptop / dev — drop the binary in bin/)
+      3. fpcalc on system PATH (Docker with libchromaprint-tools apt-installed,
+         macOS with `brew install chromaprint`, Linux distros that ship it)
+      4. Fall back to the BIN_DIR path so the error message points users to
+         the place a manual binary belongs.
+    """
+    import shutil as _shutil
+
+    override = os.getenv("MIXID_FPCALC_PATH", "").strip()
+    if override:
+        p = Path(override)
+        if p.exists():
+            return p
+
+    bin_name = "fpcalc.exe" if os.name == "nt" else "fpcalc"
+    local = BIN_DIR / bin_name
+    if local.exists():
+        return local
+
+    on_path = _shutil.which("fpcalc") or _shutil.which("fpcalc.exe")
+    if on_path:
+        return Path(on_path)
+
+    return local  # absent — fingerprint module raises with a helpful msg
+
+
+FPCALC_EXE = _resolve_fpcalc()
 
 for _d in (DATA_DIR, OUTPUTS_DIR, BIN_DIR):
     _d.mkdir(parents=True, exist_ok=True)
