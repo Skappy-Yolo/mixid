@@ -240,7 +240,13 @@ def _should_auto_demucs(pools: list, unknown_segments: list[tuple[float, float]]
     enough tracks to be worth the runtime. For mixes that already match
     well (e.g., URL shortcut hit, clean studio recording), Demucs adds
     little; skip the slow stage.
+
+    Always returns False if MIXID_DISABLE_DEMUCS env var is set
+    (cloud deployments where Demucs runtime would block other users).
     """
+    import os
+    if os.getenv("MIXID_DISABLE_DEMUCS", "").lower() in ("1", "true", "yes"):
+        return False
     total = len(pools) + len(unknown_segments)
     if total == 0:
         return False
