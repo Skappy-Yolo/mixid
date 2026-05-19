@@ -1,0 +1,24 @@
+{
+  "name": "MixID — Find every song in a DJ mix",
+  "short_name": "MixID",
+  "description": "Upload a DJ mix or paste a URL. MixID returns a timestamped tracklist.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f0f10",
+  "theme_color": "#0f0f10",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='42' fill='%230f0f10'/><text x='50%25' y='62%25' font-size='100' text-anchor='middle' font-family='system-ui' fill='%23f6c453' font-weight='800'>M</text></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='112' fill='%230f0f10'/><text x='50%25' y='62%25' font-size='280' text-anchor='middle' font-family='system-ui' fill='%23f6c453' font-weight='800'>M</text></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

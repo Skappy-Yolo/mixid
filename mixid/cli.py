@@ -16,8 +16,28 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "input",
+        nargs="?",
+        default=None,
         help="Path to an audio file (mp3/wav/m4a/...) OR a URL to a "
-        "YouTube/SoundCloud/Mixcloud/mixesdb DJ mix.",
+        "YouTube/SoundCloud/Mixcloud/mixesdb DJ mix. Omit when using --serve.",
+    )
+    parser.add_argument(
+        "--serve",
+        action="store_true",
+        help="Start the FastAPI web server on http://0.0.0.0:8000 instead of "
+        "running a single identification. Pair with `cloudflared tunnel` to "
+        "expose publicly.",
+    )
+    parser.add_argument(
+        "--host",
+        default="0.0.0.0",
+        help="Host interface for --serve (default: 0.0.0.0).",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port for --serve (default: 8000).",
     )
     parser.add_argument(
         "-o", "--output-dir",
@@ -43,6 +63,24 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.INFO if args.verbose else logging.WARNING,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
+
+    if args.serve:
+        try:
+            from mixid.web.server import main as serve_main
+        except ImportError as e:
+            print(
+                "Web extra not installed. Run:\n  pip install -e .[web]\n"
+                f"(or `pip install fastapi uvicorn python-multipart yt-dlp sse-starlette`)\n\nError: {e}",
+                file=sys.stderr,
+            )
+            return 2
+        serve_main(host=args.host, port=args.port)
+        return 0
+
+    if not args.input:
+        parser.print_help()
+        print("\nerror: input is required (or use --serve)", file=sys.stderr)
+        return 2
 
     result = run_mod.run(args.input, output_dir=args.output_dir, with_demucs=args.with_demucs)
 

@@ -1,0 +1,248 @@
+"""FastAPI web app — wraps `mixid.pipeline.run.run` for browser/PWA use.
+
+Endpoints:
+  GET  /                  → serves the PWA single-page app
+  GET  /stats             → returns total mixes processed (no PII)
+  POST /jobs              → accepts file upload OR url; returns {job_id}
+  GET  /jobs/{job_id}     → returns status + result when ready
+  GET  /static/*          → PWA assets (manifest, service worker, icons)
+
+The pipeline can take 30+ min for a 1-hour mix, so we run it in a
+background thread and the frontend polls /jobs/{job_id} every few sec.
+
+Single concurrent job by design — the CPU pipeline serializes naturally,
+and a queue is not justified for laptop-scale traffic. If multiple
+clients hit /jobs at once, they queue cooperatively.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import tempfile
+import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Optional
+
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+
+from mixid.pipeline import run as pipeline_run
+from mixid.web import stats, url_input
+
+log = logging.getLogger(__name__)
+
+
+# Single shared thread executor — pipeline is heavy CPU-bound work
+_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mixid-pipeline")
+
+
+@dataclass
+class Job:
+    id: str
+    status: str = "pending"            # pending | running | done | error
+    created_at: float = field(default_factory=time.time)
+    started_at: float | None = None
+    finished_at: float | None = None
+    source_kind: str = "file"          # 'file' or 'url'
+    source_label: str = ""              # filename or URL for display
+    with_demucs: bool = False
+    result: dict | None = None
+    error: str | None = None
+
+
+# Job registry — in-memory is fine for a laptop deploy
+_JOBS: dict[str, Job] = {}
+
+
+def _public_status_payload(job: Job) -> dict:
+    """What the PWA polls for. No internal-only state."""
+    return {
+        "id": job.id,
+        "status": job.status,
+        "source_kind": job.source_kind,
+        "source_label": job.source_label,
+        "with_demucs": job.with_demucs,
+        "created_at": job.created_at,
+        "started_at": job.started_at,
+        "finished_at": job.finished_at,
+        "result": job.result,
+        "error": job.error,
+    }
+
+
+def _result_to_payload(result: pipeline_run.MixIDResult) -> dict:
+    """Compact JSON payload from a MixIDResult. No file paths leak."""
+    return {
+        "source_input": result.source_input,
+        "tracks": [
+            {
+                "start_sec": round(t.start_sec, 2),
+                "end_sec": round(t.end_sec, 2),
+                "artist": t.artist,
+                "title": t.title,
+                "score": round(t.score, 3),
+                "source": t.source,
+                "n_segments_merged": t.n_segments_merged,
+            }
+            for t in result.tracks
+        ],
+        "unknown_segments": [
+            {"start_sec": round(s, 2), "end_sec": round(e, 2)}
+            for s, e in result.unknown_segments
+        ],
+        "timings_sec": {k: round(v, 1) for k, v in (result.timings_sec or {}).items()},
+    }
+
+
+def _run_pipeline_for_job(job_id: str, audio_path: Path, source_kind: str) -> None:
+    """Worker function — runs in thread executor."""
+    job = _JOBS[job_id]
+    try:
+        job.status = "running"
+        job.started_at = time.time()
+        result = pipeline_run.run(str(audio_path), with_demucs=job.with_demucs)
+        payload = _result_to_payload(result)
+        job.result = payload
+        job.status = "done"
+        job.finished_at = time.time()
+        # Aggregate counter (no PII)
+        stats.record_run(
+            duration_secs=(
+                (result.timings_sec or {}).get("audio_prep", 0)
+                + (result.timings_sec or {}).get("segmentation", 0)  # rough proxy
+                if not payload["tracks"]
+                else max((t["end_sec"] for t in payload["tracks"]), default=0.0)
+            ),
+            identified=len(payload["tracks"]),
+            unidentified=len(payload["unknown_segments"]),
+            source=source_kind if source_kind in ("file", "url") else "file",
+        )
+    except Exception as exc:
+        log.exception("pipeline error for job %s", job_id)
+        job.error = str(exc)
+        job.status = "error"
+        job.finished_at = time.time()
+    finally:
+        # Always delete the temp audio — we never retain user audio
+        try:
+            audio_path.unlink(missing_ok=True)
+            if audio_path.parent.name.startswith("mixid_"):
+                # remove the temp dir if it was created for this run
+                for child in audio_path.parent.glob("*"):
+                    child.unlink(missing_ok=True)
+                audio_path.parent.rmdir()
+        except Exception:
+            log.warning("temp cleanup failed for %s", audio_path)
+
+
+# ── FastAPI app ────────────────────────────────────────────────────────────
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(title="MixID", version="0.2.0")
+
+    static_dir = Path(__file__).parent / "static"
+    if static_dir.exists():
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+    @app.get("/", response_class=HTMLResponse)
+    async def index() -> HTMLResponse:
+        index_html = static_dir / "index.html"
+        if index_html.exists():
+            return HTMLResponse(index_html.read_text(encoding="utf-8"))
+        return HTMLResponse("<h1>MixID</h1><p>Static assets missing.</p>")
+
+    @app.get("/manifest.webmanifest")
+    async def manifest():
+        path = static_dir / "manifest.webmanifest"
+        if path.exists():
+            return FileResponse(str(path), media_type="application/manifest+json")
+        raise HTTPException(404)
+
+    @app.get("/sw.js")
+    async def service_worker():
+        path = static_dir / "sw.js"
+        if path.exists():
+            return FileResponse(str(path), media_type="application/javascript")
+        raise HTTPException(404)
+
+    @app.get("/stats")
+    async def get_stats() -> JSONResponse:
+        s = stats.summary()
+        return JSONResponse(asdict(s))
+
+    @app.post("/jobs")
+    async def create_job(
+        background: BackgroundTasks,
+        file: UploadFile | None = File(default=None),
+        url: str | None = Form(default=None),
+        with_demucs: bool = Form(default=False),
+    ) -> JSONResponse:
+        """Start a job from a file upload OR a URL paste. Returns {job_id}."""
+        if not file and not url:
+            raise HTTPException(400, "Provide either a file upload or a url field.")
+        if file and url:
+            raise HTTPException(400, "Provide a file OR a url, not both.")
+
+        # Resolve audio source to a local path
+        if file:
+            tmpdir = Path(tempfile.mkdtemp(prefix="mixid_up_"))
+            safe_name = Path(file.filename or "upload.bin").name
+            audio_path = tmpdir / safe_name
+            content = await file.read()
+            audio_path.write_bytes(content)
+            source_kind = "file"
+            source_label = safe_name
+        else:
+            if not url_input.is_supported_url(url or ""):
+                raise HTTPException(
+                    400,
+                    f"Unsupported URL host. Try: {', '.join(url_input.SUPPORTED_HOSTS)}",
+                )
+            try:
+                dl = url_input.download(url or "")
+            except Exception as exc:
+                raise HTTPException(502, f"URL download failed: {exc}") from exc
+            audio_path = dl.path
+            source_kind = "url"
+            source_label = dl.title or (url or "")
+
+        job_id = uuid.uuid4().hex[:12]
+        job = Job(
+            id=job_id,
+            status="pending",
+            source_kind=source_kind,
+            source_label=source_label,
+            with_demucs=bool(with_demucs),
+        )
+        _JOBS[job_id] = job
+
+        # Submit to single-worker executor — naturally serializes runs
+        _EXECUTOR.submit(_run_pipeline_for_job, job_id, audio_path, source_kind)
+
+        return JSONResponse({"job_id": job_id})
+
+    @app.get("/jobs/{job_id}")
+    async def get_job(job_id: str) -> JSONResponse:
+        job = _JOBS.get(job_id)
+        if job is None:
+            raise HTTPException(404, "job_id not found")
+        return JSONResponse(_public_status_payload(job))
+
+    return app
+
+
+app = create_app()
+
+
+def main(host: str = "0.0.0.0", port: int = 8000) -> None:
+    import uvicorn
+    uvicorn.run(app, host=host, port=port, log_level="info")
+
+
+if __name__ == "__main__":
+    main()
