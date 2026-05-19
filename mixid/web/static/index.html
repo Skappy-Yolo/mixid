@@ -21,6 +21,13 @@
     /* sticky donate icon top-right */
     .sticky-donate { position: fixed; top: 14px; right: 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 8px 14px; color: var(--ink); text-decoration: none; font-size: 13px; z-index: 100; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
     .sticky-donate:hover { border-color: var(--accent); color: var(--accent); }
+    /* load banner */
+    .load-banner { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 10px; font-size: 13px; margin: 10px 0 0; border: 1px solid var(--border); background: var(--panel); }
+    .load-banner .ind { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .load-banner.free .ind { background: var(--good); }
+    .load-banner.busy .ind { background: var(--warn); }
+    .load-banner.swamped .ind { background: var(--bad); }
+    .load-banner .pulse { animation: pulse 2s ease-in-out infinite; }
     .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin: 14px 0; }
     .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
     .tab { flex: 1; padding: 10px; border: 1px solid var(--border); background: transparent; color: var(--ink); border-radius: 10px; cursor: pointer; font-size: 14px; }
@@ -100,6 +107,10 @@
     <header>
       <h1>Mix<span class="dot">ID</span></h1>
       <div class="tagline">Paste a mix URL or upload a recording — get the full tracklist. No login. Free.</div>
+      <div id="load-banner" class="load-banner free" style="margin-top:14px;display:none;">
+        <span class="ind pulse"></span>
+        <span id="load-text">Checking server load…</span>
+      </div>
     </header>
 
     <main>
@@ -330,7 +341,26 @@
     async function fetchSpotifyConfigured() {
       try { const r = await fetch('/spotify/configured'); spotifyConfigured = (await r.json()).configured; } catch {}
     }
-    fetchStats(); fetchSpotifyConfigured();
+    async function fetchLoad() {
+      try {
+        const r = await fetch('/load');
+        const l = await r.json();
+        const banner = $('load-banner'), text = $('load-text');
+        banner.style.display = 'flex';
+        banner.classList.remove('free', 'busy', 'swamped');
+        banner.classList.add(l.state);
+        if (l.state === 'free') {
+          text.textContent = `Ready — typical wait ~30 min for a 1-hour mix.`;
+        } else if (l.state === 'busy') {
+          text.textContent = `${l.queue_depth} mix${l.queue_depth > 1 ? 'es' : ''} ahead — your wait ≈ ${l.eta_minutes_for_1h_mix} min for a 1-hour mix.`;
+        } else {
+          text.textContent = `Swamped (${l.queue_depth} ahead). Try again in an hour.`;
+        }
+      } catch { $('load-banner').style.display = 'none'; }
+    }
+    fetchStats(); fetchSpotifyConfigured(); fetchLoad();
+    // Re-check load every 30s — drives the live banner so users don't upload blind
+    setInterval(fetchLoad, 30000);
 
     // Browser notifications — ask once on first click of "Generate tracklist"
     let notifyOk = false;

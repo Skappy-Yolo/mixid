@@ -180,6 +180,33 @@ def create_app() -> FastAPI:
         s = stats.summary()
         return JSONResponse(asdict(s))
 
+    @app.get("/load")
+    async def get_load() -> JSONResponse:
+        """Current queue state — drives the live status banner on the PWA.
+
+        Returns:
+          queue_depth: number of jobs ahead in the single-worker queue
+                       (includes the one currently running, if any).
+          state: 'free' | 'busy' | 'swamped'
+          eta_minutes_for_1h_mix: rough estimate users can plan around.
+        """
+        active = [j for j in _JOBS.values() if j.status in ("pending", "running")]
+        depth = len(active)
+        if depth == 0:
+            state = "free"
+        elif depth <= 2:
+            state = "busy"
+        else:
+            state = "swamped"
+        # Conservative estimate: ~30 minutes per 1-hour mix in Shazam-only mode.
+        # Multiply by depth + 0.5 (yours-after-the-queue).
+        eta_min = int(30 * (depth + 0.5))
+        return JSONResponse({
+            "queue_depth": depth,
+            "state": state,
+            "eta_minutes_for_1h_mix": eta_min,
+        })
+
     @app.post("/jobs")
     async def create_job(
         background: BackgroundTasks,
