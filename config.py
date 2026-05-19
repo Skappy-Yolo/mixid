@@ -73,6 +73,7 @@ LOUDNESS_TARGET_LUFS = -16.0       # ITU-R BS.1770 normalization target
 HIGHPASS_CUTOFF_HZ = 80            # attenuate sub-rumble + room boom
 SAMPLE_WINDOW_SECS = 16            # per-segment fingerprint window (Shazam optimal: 15-20s)
 SHAZAM_ATTEMPTS_PER_SEGMENT = 3    # try multiple positions per segment if first misses
+DEMUCS_MAX_SEGMENTS = 20           # hard cap on Demucs retries per mix (prevents 6h runaway)
 MAX_SEGMENT_GAP_SECS = 90          # force a sample if no novelty hit in this long
 PITCH_SWEEP_PERCENT = (-6, -4, -2, 0, 2, 4, 6)   # ±6% in 2% steps, 7 variants
 MATCH_CONFIDENCE_FLOOR = 0.85      # local match score considered "confident"

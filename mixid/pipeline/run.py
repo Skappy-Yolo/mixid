@@ -175,11 +175,31 @@ def _demucs_retry_for_unknowns(
     if not unknown_segments:
         return [], []
 
+    # Hard cap to prevent multi-hour runs on long mixes / hostile uploads.
+    cap = config.DEMUCS_MAX_SEGMENTS
+    if len(unknown_segments) > cap:
+        log.warning(
+            "demucs: capping retries at %d of %d unknown segments (config.DEMUCS_MAX_SEGMENTS)",
+            cap, len(unknown_segments),
+        )
+        # Prefer the LONGEST unknown segments (more music to recover from)
+        prioritized = sorted(
+            enumerate(unknown_segments),
+            key=lambda x: (x[1][1] - x[1][0]),
+            reverse=True,
+        )
+        retry_set = {idx for idx, _ in prioritized[:cap]}
+        retry_segments = [(i, seg) for i, seg in enumerate(unknown_segments) if i in retry_set]
+        deferred = [seg for i, seg in enumerate(unknown_segments) if i not in retry_set]
+    else:
+        retry_segments = list(enumerate(unknown_segments))
+        deferred = []
+
     added_pools: list[reranker.SegmentCandidates] = []
-    remaining: list[tuple[float, float]] = []
+    remaining: list[tuple[float, float]] = list(deferred)
     sr = prepared.sample_rate
 
-    for i, (us, ue) in enumerate(unknown_segments):
+    for i, (us, ue) in retry_segments:
         snippet = prepared.samples[int(us * sr) : int(ue * sr)]
         if len(snippet) < int(8 * sr):
             remaining.append((us, ue))
