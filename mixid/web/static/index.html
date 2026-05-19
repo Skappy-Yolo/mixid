@@ -14,10 +14,13 @@
     html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
     a { color: var(--accent); }
     .wrap { max-width: 760px; margin: 0 auto; padding: 24px 16px 80px; }
-    header { text-align: center; padding: 24px 0 12px; }
+    header { text-align: center; padding: 24px 0 12px; position: relative; }
     header h1 { margin: 0; font-size: 28px; letter-spacing: -0.02em; }
     header h1 .dot { color: var(--accent); }
     header .tagline { color: var(--muted); margin-top: 6px; font-size: 14px; }
+    /* sticky donate icon top-right */
+    .sticky-donate { position: fixed; top: 14px; right: 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 8px 14px; color: var(--ink); text-decoration: none; font-size: 13px; z-index: 100; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+    .sticky-donate:hover { border-color: var(--accent); color: var(--accent); }
     .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin: 14px 0; }
     .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
     .tab { flex: 1; padding: 10px; border: 1px solid var(--border); background: transparent; color: var(--ink); border-radius: 10px; cursor: pointer; font-size: 14px; }
@@ -29,12 +32,11 @@
     input[type=file] { display: none; }
     input[type=url], input[type=text] { width: 100%; padding: 12px; background: #0a0a0c; border: 1px solid var(--border); border-radius: 10px; color: var(--ink); font-size: 14px; }
     input[type=url]:focus, input[type=text]:focus { outline: none; border-color: var(--accent); }
-    .row { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
-    label.checkbox { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 8px; cursor: pointer; }
+    .row { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
     button.go { background: var(--accent); color: #111; border: none; border-radius: 10px; padding: 12px 20px; font-weight: 700; cursor: pointer; font-size: 15px; }
     button.go:disabled { opacity: 0.4; cursor: not-allowed; }
-    .deepscan-warn { color: var(--warn); font-size: 12px; margin-top: 8px; display: none; }
-    .deepscan-warn.show { display: block; }
+    button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; font-size: 14px; cursor: pointer; }
+    button.ghost:hover { border-color: var(--accent); }
     .status { font-size: 13px; color: var(--muted); margin-top: 16px; }
     .status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; vertical-align: 1px; }
     .status .dot.running { background: var(--warn); animation: pulse 1.4s ease-in-out infinite; }
@@ -51,17 +53,31 @@
     .src-tag { color: var(--muted); font-size: 11px; text-align: right; }
     .unknown { color: var(--muted); font-style: italic; }
     .downloads { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
-    .downloads a { background: #0a0a0c; border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; color: var(--ink); text-decoration: none; font-size: 13px; }
-    .downloads a:hover { border-color: var(--accent); }
+    .downloads a, .downloads button { background: #0a0a0c; border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; color: var(--ink); text-decoration: none; font-size: 13px; cursor: pointer; }
+    .downloads a:hover, .downloads button:hover { border-color: var(--accent); }
     footer { text-align: center; color: var(--muted); font-size: 12px; padding: 24px 0; }
     footer a { color: var(--muted); }
     footer .count { color: var(--accent); font-weight: 600; }
-    .donate { display: inline-block; margin-top: 8px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px; color: var(--ink); text-decoration: none; font-size: 13px; }
-    .donate:hover { border-color: var(--accent); }
     .hidden { display: none !important; }
+    /* Modal */
+    .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 20px; }
+    .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 22px; max-width: 460px; width: 100%; }
+    .modal h3 { margin: 0 0 8px; font-size: 19px; }
+    .modal p { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 8px 0; }
+    .modal .options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+    .modal .options a, .modal .options button { display: flex; flex-direction: column; align-items: center; padding: 14px 10px; background: #0a0a0c; border: 1px solid var(--border); border-radius: 10px; color: var(--ink); text-decoration: none; cursor: pointer; gap: 6px; font-size: 13px; }
+    .modal .options a:hover { border-color: var(--accent); }
+    .modal .options .ic { font-size: 22px; }
+    .modal .skip { margin-top: 12px; display: block; width: 100%; text-align: center; background: transparent; color: var(--muted); border: none; padding: 8px; font-size: 13px; cursor: pointer; }
+    .modal .skip:hover { color: var(--ink); }
+    .crypto-list { font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted); margin-top: 10px; }
+    .crypto-list .row-c { display: flex; gap: 6px; margin: 4px 0; align-items: center; }
+    .crypto-list .copy { background: transparent; border: 1px solid var(--border); border-radius: 6px; color: var(--ink); padding: 2px 8px; cursor: pointer; font-size: 11px; }
   </style>
 </head>
 <body>
+  <a class="sticky-donate" id="sticky-donate" href="#donate">☕ Support</a>
+
   <div class="wrap">
     <header>
       <h1>Mix<span class="dot">ID</span></h1>
@@ -78,7 +94,7 @@
         <div id="pane-file">
           <label class="drop" id="drop" for="file">
             <p><strong>Drop a mix here</strong> or tap to pick</p>
-            <p>mp3, m4a, wav, mp4, flac, ogg — up to 200 MB</p>
+            <p>mp3, m4a, wav, mp4, flac, ogg</p>
             <p id="filename" style="color:var(--accent); display:none;"></p>
           </label>
           <input type="file" id="file" accept="audio/*,video/*" />
@@ -90,14 +106,10 @@
         </div>
 
         <div class="row">
-          <label class="checkbox">
-            <input type="checkbox" id="deep" />
-            Deep Scan (Demucs — slow)
-          </label>
           <span style="flex:1"></span>
-          <button id="go" class="go" type="button" disabled>Identify tracks</button>
+          <button id="go" class="go" type="button" disabled>Generate tracklist</button>
         </div>
-        <div id="deepwarn" class="deepscan-warn">⚠ Deep Scan strips crowd noise via stem separation. Takes 4–6× longer (hours, not minutes). Use only if you're patient.</div>
+        <p style="color:var(--muted);font-size:11px;margin-top:8px;">A 1-hour mix usually takes ~20–30 min. You can minimise this tab — we'll notify you when it's ready.</p>
 
         <div id="status" class="status hidden">
           <span class="dot" id="statusdot"></span>
@@ -111,12 +123,60 @@
         <div id="tracklist" class="tracklist"></div>
         <div class="downloads" id="downloads"></div>
       </div>
+
+      <div class="card" id="donate">
+        <h3 style="margin:0 0 8px">☕ Support this tool</h3>
+        <p style="color:var(--muted);font-size:13px;margin:4px 0 12px;">MixID runs on a laptop. Coffees keep it caffeinated. Truly optional — pick whatever's easiest for you.</p>
+        <div class="options" style="grid-template-columns: 1fr 1fr 1fr">
+          <a href="https://ko-fi.com/skappyyolo" target="_blank" rel="noopener">
+            <span class="ic">💚</span>
+            <span>Ko-fi</span>
+            <span style="color:var(--muted);font-size:11px;">0% fee</span>
+          </a>
+          <a href="https://github.com/sponsors/Skappy-Yolo" target="_blank" rel="noopener">
+            <span class="ic">⭐</span>
+            <span>GitHub Sponsors</span>
+            <span style="color:var(--muted);font-size:11px;">0% fee</span>
+          </a>
+          <button type="button" id="show-crypto">
+            <span class="ic">₿</span>
+            <span>Crypto</span>
+            <span style="color:var(--muted);font-size:11px;">anonymous</span>
+          </button>
+        </div>
+        <div id="crypto-addr" class="crypto-list hidden">
+          <div class="row-c">BTC: <span id="btc">REPLACE_WITH_YOUR_BTC_ADDR</span> <button class="copy" data-copy="btc">copy</button></div>
+          <div class="row-c">ETH: <span id="eth">REPLACE_WITH_YOUR_ETH_ADDR</span> <button class="copy" data-copy="eth">copy</button></div>
+          <div class="row-c">SOL: <span id="sol">REPLACE_WITH_YOUR_SOL_ADDR</span> <button class="copy" data-copy="sol">copy</button></div>
+          <p style="color:var(--muted);font-size:11px;margin-top:8px;">No KYC, no fees beyond network gas. Replace placeholders in <code>index.html</code> with your wallet addresses.</p>
+        </div>
+      </div>
     </main>
 
     <footer>
-      <div><span class="count" id="count">…</span> mixes processed since launch · <a href="https://github.com/Skappy-Yolo/mixid" target="_blank">source</a></div>
-      <a class="donate" href="#" id="donate" target="_blank" rel="noopener">☕ Donate (helps keep this free)</a>
+      <div><span class="count" id="count">…</span> mixes processed since launch · <a href="https://github.com/Skappy-Yolo/mixid" target="_blank">source</a> · <a href="#donate">support</a></div>
     </footer>
+  </div>
+
+  <!-- Pre-result donation modal -->
+  <div id="donateModal" class="modal-bg hidden">
+    <div class="modal">
+      <h3>Almost done 🎧</h3>
+      <p>Your tracklist's ready. Before you see it — MixID is free, no ads, no login. It runs on a laptop I'm paying for out of pocket. If it helped you, throw a coffee:</p>
+      <div class="options">
+        <a href="https://ko-fi.com/skappyyolo" target="_blank" rel="noopener">
+          <span class="ic">💚</span>
+          <span>Ko-fi</span>
+          <span style="color:var(--muted);font-size:11px;">€5 = 1 month of mixes for someone else</span>
+        </a>
+        <a href="https://github.com/sponsors/Skappy-Yolo" target="_blank" rel="noopener">
+          <span class="ic">⭐</span>
+          <span>GitHub Sponsors</span>
+          <span style="color:var(--muted);font-size:11px;">0% fee, recurring or one-time</span>
+        </a>
+      </div>
+      <button class="skip" type="button" id="skipDonate">Skip — just show me the tracklist</button>
+    </div>
   </div>
 
   <script>
@@ -125,11 +185,15 @@
     const paneFile = $('pane-file'), paneUrl = $('pane-url');
     const fileInput = $('file'), urlInput = $('url');
     const drop = $('drop'), filenameDisplay = $('filename');
-    const go = $('go'), deep = $('deep'), deepwarn = $('deepwarn');
+    const go = $('go');
     const status = $('status'), statusdot = $('statusdot'), statustext = $('statustext');
     const resultcard = $('resultcard'), tracklist = $('tracklist'), meta = $('meta'), downloads = $('downloads');
+    const donateModal = $('donateModal');
 
     let currentTab = 'file';
+    let lastResultJob = null;
+    let spotifyConfigured = false;
+
     function switchTab(t) {
       currentTab = t;
       tabFile.classList.toggle('active', t === 'file');
@@ -165,7 +229,6 @@
         validate();
       }
     });
-    deep.addEventListener('change', () => deepwarn.classList.toggle('show', deep.checked));
 
     function fmtHMS(secs) {
       secs = Math.max(0, Math.floor(secs));
@@ -189,7 +252,23 @@
         $('count').textContent = s.total_runs.toLocaleString();
       } catch {}
     }
-    fetchStats();
+    async function fetchSpotifyConfigured() {
+      try { const r = await fetch('/spotify/configured'); spotifyConfigured = (await r.json()).configured; } catch {}
+    }
+    fetchStats(); fetchSpotifyConfigured();
+
+    // Browser notifications — ask once on first click of "Generate tracklist"
+    let notifyOk = false;
+    async function ensureNotificationPerm() {
+      if (!('Notification' in window)) return false;
+      if (Notification.permission === 'granted') { notifyOk = true; return true; }
+      if (Notification.permission === 'denied') return false;
+      try { const p = await Notification.requestPermission(); notifyOk = (p === 'granted'); return notifyOk; } catch { return false; }
+    }
+    function notify(title, body) {
+      if (!notifyOk || document.visibilityState === 'visible') return;
+      try { new Notification(title, { body, icon: '/manifest.webmanifest' }); } catch {}
+    }
 
     go.addEventListener('click', async () => {
       go.disabled = true;
@@ -197,22 +276,18 @@
       downloads.innerHTML = '';
       resultcard.classList.add('hidden');
       setStatus('running', currentTab === 'url' ? 'Fetching audio from URL…' : 'Uploading…');
+      ensureNotificationPerm();
 
       const fd = new FormData();
-      if (currentTab === 'file') {
-        fd.append('file', fileInput.files[0]);
-      } else {
-        fd.append('url', urlInput.value.trim());
-      }
-      fd.append('with_demucs', deep.checked ? 'true' : 'false');
+      if (currentTab === 'file') fd.append('file', fileInput.files[0]);
+      else fd.append('url', urlInput.value.trim());
+      // Always 'auto' — the pipeline decides Deep Scan itself based on unknown ratio.
+      fd.append('with_demucs', 'auto');
 
       let job;
       try {
         const r = await fetch('/jobs', { method: 'POST', body: fd });
-        if (!r.ok) {
-          const err = await r.text();
-          throw new Error(err || r.status);
-        }
+        if (!r.ok) { const e = await r.text(); throw new Error(e || r.status); }
         job = await r.json();
       } catch (e) {
         setStatus('error', 'Failed to start: ' + e.message);
@@ -220,9 +295,8 @@
         return;
       }
 
-      setStatus('running', 'Processing — this can take ~30 min for a 1-hour mix.');
+      setStatus('running', 'Analyzing… 1-hour mix usually needs ~20–30 min. You can leave this tab.');
 
-      // poll
       const poll = async () => {
         try {
           const r = await fetch('/jobs/' + job.job_id);
@@ -230,7 +304,10 @@
           const j = await r.json();
           if (j.status === 'done') {
             setStatus('done', 'Done. ' + (j.result.tracks?.length || 0) + ' tracks identified.');
-            renderResult(j);
+            notify('MixID is done', (j.result.tracks?.length || 0) + ' tracks identified.');
+            lastResultJob = j;
+            // Show donation modal first
+            donateModal.classList.remove('hidden');
             fetchStats();
             go.disabled = false;
             return;
@@ -240,31 +317,30 @@
             go.disabled = false;
             return;
           }
-          // still pending or running
           if (j.started_at) {
             const elapsed = Math.floor(Date.now() / 1000 - j.started_at);
-            setStatus('running', `Processing — ${elapsed}s elapsed` + (j.with_demucs ? ' (Deep Scan)' : ''));
+            setStatus('running', `Analyzing — ${Math.floor(elapsed/60)}m ${elapsed%60}s elapsed. Leave this tab if you want.`);
           }
           setTimeout(poll, 4000);
-        } catch (e) {
-          setTimeout(poll, 6000);
-        }
+        } catch { setTimeout(poll, 6000); }
       };
       setTimeout(poll, 1500);
     });
 
+    function dismissDonate() { donateModal.classList.add('hidden'); renderResult(lastResultJob); }
+    $('skipDonate').addEventListener('click', dismissDonate);
+    donateModal.addEventListener('click', e => { if (e.target === donateModal) dismissDonate(); });
+    // Also dismiss if a donate option is clicked (they'll be on the donate page; we still want to show the result on return)
+    donateModal.querySelectorAll('a').forEach(a => a.addEventListener('click', () => setTimeout(dismissDonate, 100)));
+
     function renderResult(j) {
+      if (!j) return;
       resultcard.classList.remove('hidden');
       meta.textContent = `Source: ${j.source_label} · ${j.result.tracks.length} identified · ${j.result.unknown_segments.length} unidentified segments`;
 
-      // Combine tracks + unknowns in time order
       const items = [];
-      for (const t of j.result.tracks) {
-        items.push({ kind: 'track', start: t.start_sec, ...t });
-      }
-      for (const u of j.result.unknown_segments) {
-        items.push({ kind: 'unknown', start: u.start_sec, end: u.end_sec });
-      }
+      for (const t of j.result.tracks) items.push({ kind: 'track', start: t.start_sec, ...t });
+      for (const u of j.result.unknown_segments) items.push({ kind: 'unknown', start: u.start_sec, end: u.end_sec });
       items.sort((a, b) => a.start - b.start);
 
       tracklist.innerHTML = '';
@@ -287,7 +363,6 @@
         tracklist.appendChild(row);
       }
 
-      // Download buttons (build blobs from the payload client-side)
       const txt = items.map(it => it.kind === 'track'
         ? `${fmtHMS(it.start)}  ${(it.artist ? it.artist + ' - ' : '')}${it.title}  [${it.source}]`
         : `${fmtHMS(it.start)}  [unidentified: ${fmtHMS(it.start)}-${fmtHMS(it.end)}]`
@@ -296,17 +371,41 @@
       downloads.innerHTML = '';
       const dlBtn = (label, blob, filename) => {
         const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = filename;
-        a.textContent = label;
+        a.href = URL.createObjectURL(blob); a.download = filename; a.textContent = label;
         downloads.appendChild(a);
       };
       dlBtn('Download .txt', new Blob([txt], { type: 'text/plain' }), 'tracklist.txt');
       dlBtn('Download .json', new Blob([jsonStr], { type: 'application/json' }), 'tracklist.json');
+      // Spotify export button — only if backend configured
+      if (spotifyConfigured && j.result.tracks.length > 0) {
+        const a = document.createElement('a');
+        a.href = `/spotify/login?job_id=${encodeURIComponent(j.id)}`;
+        a.textContent = '🎵 Add to Spotify';
+        a.style.borderColor = 'var(--accent)';
+        downloads.appendChild(a);
+      }
     }
 
-    function escape(s) {
-      return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    function escape(s) { return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+    // Crypto reveal + copy
+    $('show-crypto').addEventListener('click', () => $('crypto-addr').classList.toggle('hidden'));
+    document.querySelectorAll('.copy').forEach(btn => btn.addEventListener('click', () => {
+      const id = btn.dataset.copy; const text = $(id).textContent;
+      if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => { btn.textContent = 'copied'; setTimeout(() => btn.textContent = 'copy', 1500); });
+    }));
+
+    // Spotify callback → success toast in URL fragment
+    if (window.location.hash.includes('spotify_added=')) {
+      const params = new URLSearchParams(window.location.hash.slice(1));
+      const added = params.get('spotify_added'), url = decodeURIComponent(params.get('spotify_url') || '');
+      if (added) {
+        const toast = document.createElement('div');
+        toast.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--accent);color:#111;padding:12px 18px;border-radius:10px;font-weight:600;z-index:300;';
+        toast.innerHTML = `Added ${added} tracks to Spotify · <a href="${url}" target="_blank" style="color:#111;text-decoration:underline">open playlist</a>`;
+        document.body.appendChild(toast);
+        history.replaceState(null, '', '/');
+      }
     }
 
     if ('serviceWorker' in navigator) {

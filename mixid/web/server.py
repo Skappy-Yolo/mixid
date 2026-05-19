@@ -26,12 +26,12 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from mixid.pipeline import run as pipeline_run
-from mixid.web import stats, url_input
+from mixid.web import spotify_export, stats, url_input
 
 log = logging.getLogger(__name__)
 
@@ -98,13 +98,18 @@ def _result_to_payload(result: pipeline_run.MixIDResult) -> dict:
     }
 
 
-def _run_pipeline_for_job(job_id: str, audio_path: Path, source_kind: str) -> None:
+def _run_pipeline_for_job(
+    job_id: str,
+    audio_path: Path,
+    source_kind: str,
+    with_demucs: bool | None = None,
+) -> None:
     """Worker function — runs in thread executor."""
     job = _JOBS[job_id]
     try:
         job.status = "running"
         job.started_at = time.time()
-        result = pipeline_run.run(str(audio_path), with_demucs=job.with_demucs)
+        result = pipeline_run.run(str(audio_path), with_demucs=with_demucs)
         payload = _result_to_payload(result)
         job.result = payload
         job.status = "done"
@@ -180,9 +185,15 @@ def create_app() -> FastAPI:
         background: BackgroundTasks,
         file: UploadFile | None = File(default=None),
         url: str | None = Form(default=None),
-        with_demucs: bool = Form(default=False),
+        with_demucs: str | None = Form(default=None),
     ) -> JSONResponse:
-        """Start a job from a file upload OR a URL paste. Returns {job_id}."""
+        """Start a job from a file upload OR a URL paste. Returns {job_id}.
+
+        with_demucs: omit / null → pipeline decides automatically based on
+                                   how many segments come back unidentified.
+                     'true'     → force Demucs on
+                     'false'    → force Demucs off
+        """
         if not file and not url:
             raise HTTPException(400, "Provide either a file upload or a url field.")
         if file and url:
@@ -211,18 +222,27 @@ def create_app() -> FastAPI:
             source_kind = "url"
             source_label = dl.title or (url or "")
 
+        # Parse with_demucs tri-state: None / 'true' / 'false'
+        wd_override: bool | None
+        if with_demucs is None or with_demucs == "" or with_demucs == "auto":
+            wd_override = None
+        elif with_demucs.lower() == "true":
+            wd_override = True
+        else:
+            wd_override = False
+
         job_id = uuid.uuid4().hex[:12]
         job = Job(
             id=job_id,
             status="pending",
             source_kind=source_kind,
             source_label=source_label,
-            with_demucs=bool(with_demucs),
+            with_demucs=bool(wd_override) if wd_override is not None else False,
         )
         _JOBS[job_id] = job
 
         # Submit to single-worker executor — naturally serializes runs
-        _EXECUTOR.submit(_run_pipeline_for_job, job_id, audio_path, source_kind)
+        _EXECUTOR.submit(_run_pipeline_for_job, job_id, audio_path, source_kind, wd_override)
 
         return JSONResponse({"job_id": job_id})
 
@@ -232,6 +252,50 @@ def create_app() -> FastAPI:
         if job is None:
             raise HTTPException(404, "job_id not found")
         return JSONResponse(_public_status_payload(job))
+
+    # ── Spotify playlist export (optional, user-initiated OAuth) ───────────
+
+    @app.get("/spotify/configured")
+    async def spotify_configured() -> JSONResponse:
+        """Lets the PWA know whether to show the 'Add to Spotify' button."""
+        return JSONResponse({"configured": spotify_export.is_configured()})
+
+    @app.get("/spotify/login")
+    async def spotify_login(job_id: str = Query(...)) -> RedirectResponse:
+        """Send user to Spotify's auth page; state carries the job_id back."""
+        if not spotify_export.is_configured():
+            raise HTTPException(503, "Spotify export not configured on server.")
+        if _JOBS.get(job_id) is None:
+            raise HTTPException(404, "job_id not found")
+        url = spotify_export.build_login_url(job_id)
+        return RedirectResponse(url, status_code=302)
+
+    @app.get("/spotify/callback")
+    async def spotify_callback(code: str = Query(...), state: str = Query("")) -> RedirectResponse:
+        """Spotify redirects here after the user authorizes. We create the
+        playlist and redirect them back to the PWA with the playlist URL
+        in the fragment so the JS can show a success toast."""
+        job = _JOBS.get(state) if state else None
+        if job is None or not job.result:
+            raise HTTPException(404, "Job not found or not finished yet.")
+        try:
+            res = spotify_export.exchange_and_create_playlist(
+                code=code,
+                tracks=job.result["tracks"],
+                name_suffix=(job.source_label or "")[:60],
+            )
+        except Exception as exc:
+            log.exception("Spotify export failed")
+            return RedirectResponse(f"/?spotify_error={str(exc)[:120]}", status_code=302)
+        # Encode result in URL fragment so the SPA can read it client-side
+        from urllib.parse import quote
+        frag = (
+            f"#spotify_added={res.tracks_added}"
+            f"&spotify_url={quote(res.playlist_url, safe='')}"
+            f"&spotify_unmatched={res.tracks_unmatched and len(res.tracks_unmatched) or 0}"
+            f"&job={state}"
+        )
+        return RedirectResponse(f"/{frag}", status_code=302)
 
     return app
 

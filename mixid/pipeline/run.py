@@ -232,12 +232,33 @@ def _demucs_retry_for_unknowns(
     return added_pools, remaining
 
 
+def _should_auto_demucs(pools: list, unknown_segments: list[tuple[float, float]]) -> bool:
+    """Decide whether to auto-trigger Demucs based on Tier-1 outcomes.
+
+    Triggers when more than half of the segments came back unidentified —
+    that's the case where stem isolation actually has a chance to rescue
+    enough tracks to be worth the runtime. For mixes that already match
+    well (e.g., URL shortcut hit, clean studio recording), Demucs adds
+    little; skip the slow stage.
+    """
+    total = len(pools) + len(unknown_segments)
+    if total == 0:
+        return False
+    return len(unknown_segments) / total > 0.5 and local_demucs.is_available()
+
+
 def run(
     input_path_or_url: str,
     output_dir: Path | None = None,
-    with_demucs: bool = False,
+    with_demucs: bool | None = None,
 ) -> MixIDResult:
-    """Run the Tier-1 pipeline end-to-end. Writes outputs and returns the result."""
+    """Run the Tier-1 pipeline end-to-end. Writes outputs and returns the result.
+
+    with_demucs:
+        None (default) → AUTO: trigger Demucs only if >50% of segments unidentified
+        True           → always run Demucs (legacy / explicit override)
+        False          → never run Demucs (legacy / explicit override)
+    """
     t_start = time.monotonic()
     run_id = uuid.uuid4().hex[:8]
     output_dir = (output_dir or (config.OUTPUTS_DIR / run_id)).resolve()
@@ -369,15 +390,23 @@ def run(
         if pool.segment_index not in reranked_idxs:
             unknown_segments.append((pool.start_sec, pool.end_sec))
 
-    # ── 5.25 Demucs noise-removal retry for unknowns (opt-in, slow) ────────
-    if with_demucs and unknown_segments:
+    # ── 5.25 Demucs noise-removal retry for unknowns ─────────────────────
+    # AUTO mode (with_demucs=None): trigger only when >50% segments unknown
+    effective_demucs = (
+        with_demucs if with_demucs is not None
+        else _should_auto_demucs(pools, unknown_segments)
+    )
+    if effective_demucs and unknown_segments:
         t = time.monotonic()
-        log.info("Demucs retry on %d unknown segments — may take several minutes", len(unknown_segments))
+        log.info(
+            "Demucs retry on %d unknown segments (%s) — may take several minutes",
+            len(unknown_segments),
+            "auto" if with_demucs is None else "explicit",
+        )
         added_pools, unknown_segments = _demucs_retry_for_unknowns(
             prepared, pools, unknown_segments, library_lookup
         )
         timings["demucs_retry"] = time.monotonic() - t
-        # Re-rank the new pools too
         if added_pools:
             extra = reranker.rerank(added_pools)
             reranked.extend(extra)
