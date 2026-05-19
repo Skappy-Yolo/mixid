@@ -260,42 +260,36 @@ def create_app() -> FastAPI:
         """Lets the PWA know whether to show the 'Add to Spotify' button."""
         return JSONResponse({"configured": spotify_export.is_configured()})
 
-    @app.get("/spotify/login")
-    async def spotify_login(job_id: str = Query(...)) -> RedirectResponse:
-        """Send user to Spotify's auth page; state carries the job_id back."""
-        if not spotify_export.is_configured():
-            raise HTTPException(503, "Spotify export not configured on server.")
-        if _JOBS.get(job_id) is None:
-            raise HTTPException(404, "job_id not found")
-        url = spotify_export.build_login_url(job_id)
-        return RedirectResponse(url, status_code=302)
-
-    @app.get("/spotify/callback")
-    async def spotify_callback(code: str = Query(...), state: str = Query("")) -> RedirectResponse:
-        """Spotify redirects here after the user authorizes. We create the
-        playlist and redirect them back to the PWA with the playlist URL
-        in the fragment so the JS can show a success toast."""
-        job = _JOBS.get(state) if state else None
+    @app.post("/spotify/playlist")
+    async def create_spotify_playlist(job_id: str = Query(...)) -> JSONResponse:
+        """User-facing endpoint: creates a public playlist on the HOST's
+        Spotify account using the host's stored refresh token. No user
+        OAuth needed."""
+        job = _JOBS.get(job_id)
         if job is None or not job.result:
             raise HTTPException(404, "Job not found or not finished yet.")
+        if not spotify_export.is_configured():
+            raise HTTPException(
+                503,
+                "Spotify export not configured. The host needs to run "
+                "`python -m mixid.web.spotify_setup` once.",
+            )
         try:
-            res = spotify_export.exchange_and_create_playlist(
-                code=code,
+            res = spotify_export.create_playlist_on_host(
                 tracks=job.result["tracks"],
                 name_suffix=(job.source_label or "")[:60],
             )
+        except spotify_export.NoHostConfigured as exc:
+            raise HTTPException(503, str(exc)) from exc
         except Exception as exc:
-            log.exception("Spotify export failed")
-            return RedirectResponse(f"/?spotify_error={str(exc)[:120]}", status_code=302)
-        # Encode result in URL fragment so the SPA can read it client-side
-        from urllib.parse import quote
-        frag = (
-            f"#spotify_added={res.tracks_added}"
-            f"&spotify_url={quote(res.playlist_url, safe='')}"
-            f"&spotify_unmatched={res.tracks_unmatched and len(res.tracks_unmatched) or 0}"
-            f"&job={state}"
-        )
-        return RedirectResponse(f"/{frag}", status_code=302)
+            log.exception("Spotify export failed for job %s", job_id)
+            raise HTTPException(502, f"Spotify export failed: {exc}") from exc
+        return JSONResponse({
+            "playlist_url": res.playlist_url,
+            "playlist_id": res.playlist_id,
+            "tracks_added": res.tracks_added,
+            "tracks_unmatched": len(res.tracks_unmatched),
+        })
 
     return app
 

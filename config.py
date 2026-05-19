@@ -49,9 +49,14 @@ for _d in (DATA_DIR, OUTPUTS_DIR, BIN_DIR):
 # ── Tier-1 free APIs ────────────────────────────────────────────────────────
 ACOUSTID_API_KEY = os.getenv("ACOUSTID_API_KEY", "")
 
-# ── Spotify (free dev app, used to build a preview-fingerprint library) ────
+# ── Spotify (free dev app) ─────────────────────────────────────────────────
+# CLIENT_ID/SECRET: dev app credentials from developer.spotify.com
+# HOST_REFRESH_TOKEN: one-time host OAuth token (after running
+#   `python -m mixid.web.spotify_setup`) — playlists get created on the
+#   HOST's account so end users don't have to log in.
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID", "")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET", "")
+SPOTIFY_HOST_REFRESH_TOKEN = os.getenv("SPOTIFY_HOST_REFRESH_TOKEN", "")
 
 # ── Tier-2 free APIs (Colab/HF) ─────────────────────────────────────────────
 GENIUS_API_KEY = os.getenv("GENIUS_API_KEY", "")

@@ -81,13 +81,15 @@
     .coin-row .info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
     .coin-row .coin-name { font-weight: 700; font-size: 14px; }
     .coin-row .networks { font-size: 11px; color: var(--muted); }
-    .coin-row .addr-wrap { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
-    .coin-row .addr { font-family: ui-monospace, monospace; font-size: 11px; color: var(--ink); background: var(--bg); padding: 4px 8px; border-radius: 6px; word-break: break-all; flex: 1; line-height: 1.4; }
-    .coin-row .copy { background: transparent; border: 1px solid var(--border); border-radius: 6px; color: var(--ink); padding: 4px 10px; cursor: pointer; font-size: 11px; white-space: nowrap; }
-    .coin-row .copy:hover { border-color: var(--accent); color: var(--accent); }
-    @media (max-width: 480px) {
+    .coin-row .addr-wrap { display: flex; gap: 6px; align-items: center; margin-top: 4px; flex-wrap: wrap; }
+    .coin-row .addr { font-family: ui-monospace, monospace; font-size: 11px; color: var(--ink); background: var(--bg); padding: 4px 8px; border-radius: 6px; word-break: break-all; flex: 1; line-height: 1.4; min-width: 0; }
+    .coin-row .copy, .coin-row .open-wallet { background: transparent; border: 1px solid var(--border); border-radius: 6px; color: var(--ink); padding: 4px 10px; cursor: pointer; font-size: 11px; white-space: nowrap; text-decoration: none; display: inline-block; }
+    .coin-row .copy:hover, .coin-row .open-wallet:hover { border-color: var(--accent); color: var(--accent); }
+    .coin-row .open-wallet { border-color: var(--accent); color: var(--accent); }
+    /* QR is only useful on desktop (scan with phone wallet). On mobile, the wallet deep-link does the work. */
+    @media (max-width: 600px) {
       .coin-row { grid-template-columns: 1fr; }
-      .coin-row .qr { width: 140px; height: 140px; margin: 0 auto; }
+      .coin-row .qr { display: none; }
     }
   </style>
 </head>
@@ -177,6 +179,7 @@
               <div class="addr-wrap">
                 <span class="addr" id="btc-addr">1CRyaVX7tuBuzGNjBnXst7GvLdJK8YfaTW</span>
                 <button class="copy" data-copy="btc-addr">copy</button>
+                <a class="open-wallet" href="bitcoin:1CRyaVX7tuBuzGNjBnXst7GvLdJK8YfaTW">Open in wallet</a>
               </div>
             </div>
           </div>
@@ -188,6 +191,7 @@
               <div class="addr-wrap">
                 <span class="addr" id="evm-addr">0x5bfe09cb7e461b85d5893638e003a5cb99c18dbb</span>
                 <button class="copy" data-copy="evm-addr">copy</button>
+                <a class="open-wallet" href="ethereum:0x5bfe09cb7e461b85d5893638e003a5cb99c18dbb">Open in wallet</a>
               </div>
             </div>
           </div>
@@ -199,10 +203,11 @@
               <div class="addr-wrap">
                 <span class="addr" id="sol-addr">CEjPiMHQYXPc3NMaNb24gepLdX2iS9YYHRXNCNEt7R1</span>
                 <button class="copy" data-copy="sol-addr">copy</button>
+                <a class="open-wallet" href="solana:CEjPiMHQYXPc3NMaNb24gepLdX2iS9YYHRXNCNEt7R1">Open in wallet</a>
               </div>
             </div>
           </div>
-          <p style="color:var(--muted);font-size:11px;margin-top:8px;">No KYC, no fees beyond network gas. Scan QR with a phone wallet, or copy the address.</p>
+          <p style="color:var(--muted);font-size:11px;margin-top:8px;">No KYC. No fees beyond network gas. On mobile, tap "Open in wallet" — opens your installed app (MetaMask, Phantom, Trust, etc.) with the address pre-filled. On desktop, scan the QR with your phone wallet.</p>
         </div>
       </div>
     </main>
@@ -436,13 +441,36 @@
       };
       dlBtn('Download .txt', new Blob([txt], { type: 'text/plain' }), 'tracklist.txt');
       dlBtn('Download .json', new Blob([jsonStr], { type: 'application/json' }), 'tracklist.json');
-      // Spotify export button — only if backend configured
+      // Spotify export button — only if backend configured.
+      // Creates a public playlist on the HOST's account (no user OAuth needed).
       if (spotifyConfigured && j.result.tracks.length > 0) {
-        const a = document.createElement('a');
-        a.href = `/spotify/login?job_id=${encodeURIComponent(j.id)}`;
-        a.textContent = '🎵 Add to Spotify';
-        a.style.borderColor = 'var(--accent)';
-        downloads.appendChild(a);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = '🎵 Add to Spotify';
+        btn.style.borderColor = 'var(--accent)';
+        btn.style.color = 'var(--accent)';
+        btn.addEventListener('click', async () => {
+          btn.disabled = true; btn.textContent = 'Creating playlist…';
+          try {
+            const r = await fetch(`/spotify/playlist?job_id=${encodeURIComponent(j.id)}`, { method: 'POST' });
+            if (!r.ok) throw new Error(await r.text());
+            const d = await r.json();
+            btn.textContent = '✓ Open playlist';
+            btn.onclick = () => window.open(d.playlist_url, '_blank');
+            btn.disabled = false;
+            // Toast for context
+            const toast = document.createElement('div');
+            toast.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--accent);color:#111;padding:12px 18px;border-radius:10px;font-weight:600;z-index:300;';
+            toast.innerHTML = `Added ${d.tracks_added} of ${j.result.tracks.length} tracks to Spotify · <a href="${d.playlist_url}" target="_blank" style="color:#111;text-decoration:underline">open playlist</a>`;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 8000);
+          } catch (e) {
+            btn.textContent = '🎵 Add to Spotify';
+            btn.disabled = false;
+            alert('Spotify export failed: ' + e.message);
+          }
+        });
+        downloads.appendChild(btn);
       }
     }
 
@@ -454,19 +482,6 @@
       const id = btn.dataset.copy; const text = $(id).textContent;
       if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => { btn.textContent = 'copied'; setTimeout(() => btn.textContent = 'copy', 1500); });
     }));
-
-    // Spotify callback → success toast in URL fragment
-    if (window.location.hash.includes('spotify_added=')) {
-      const params = new URLSearchParams(window.location.hash.slice(1));
-      const added = params.get('spotify_added'), url = decodeURIComponent(params.get('spotify_url') || '');
-      if (added) {
-        const toast = document.createElement('div');
-        toast.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--accent);color:#111;padding:12px 18px;border-radius:10px;font-weight:600;z-index:300;';
-        toast.innerHTML = `Added ${added} tracks to Spotify · <a href="${url}" target="_blank" style="color:#111;text-decoration:underline">open playlist</a>`;
-        document.body.appendChild(toast);
-        history.replaceState(null, '', '/');
-      }
-    }
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});
