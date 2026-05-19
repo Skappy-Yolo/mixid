@@ -66,12 +66,35 @@ try {
     # 7. Reset the worktree's hf-deploy branch to mirror main
     git reset --hard main 2>&1 | Out-Null
 
-    # 8. Promote the HF-flavored files to root
+    # 8. Strip files that aren't needed at runtime AND have historically
+    # tripped HF's abuse handler (e.g., docs that discuss Cloudflare Tunnel
+    # got flagged as 'Blocked by rule: Cloudflare' on a prior deploy).
+    # The HF container only needs: mixid/, config.py, pyproject.toml,
+    # Dockerfile, README.md.
+    Write-Host "Pruning non-runtime files from the HF deploy..."
+    $prune = @(
+        "docs",
+        "articles",
+        "notebooks",
+        "tests",
+        "eval",
+        "huggingface_space",
+        "scripts",
+        ".env.example",
+        ".gitattributes"
+    )
+    foreach ($p in $prune) {
+        if (Test-Path $p) {
+            git rm -rf $p 2>&1 | Out-Null
+        }
+    }
+
+    # 9. Promote the HF-flavored files to root
     Write-Host "Promoting Hugging Face files to root..."
     Copy-Item -Force (Join-Path $repo "huggingface_space\README.md") "README.md"
     Copy-Item -Force (Join-Path $repo "huggingface_space\Dockerfile") "Dockerfile"
 
-    # 9. Commit the swap (allow-empty for re-deploys without changes)
+    # 10. Commit the swap (allow-empty for re-deploys without changes)
     git add README.md Dockerfile
     $msg = "deploy: HF Spaces (auto-generated from main)"
     git commit -m $msg --allow-empty 2>&1 | Out-Null

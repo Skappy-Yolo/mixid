@@ -43,6 +43,16 @@ git worktree add "$worktree" hf-deploy >/dev/null
 (
   cd "$worktree"
   git reset --hard main >/dev/null
+
+  # Strip non-runtime files that have tripped HF's abuse handler in the past
+  # (specifically docs discussing Cloudflare Tunnel got flagged).
+  echo "Pruning non-runtime files from the HF deploy..."
+  for d in docs articles notebooks tests eval huggingface_space scripts .env.example .gitattributes; do
+    if [ -e "$d" ]; then
+      git rm -rf "$d" >/dev/null 2>&1 || true
+    fi
+  done
+
   echo "Promoting Hugging Face files to root..."
   cp -f "$repo/huggingface_space/README.md" README.md
   cp -f "$repo/huggingface_space/Dockerfile" Dockerfile
