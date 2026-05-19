@@ -70,9 +70,21 @@
     .modal .options .ic { font-size: 22px; }
     .modal .skip { margin-top: 12px; display: block; width: 100%; text-align: center; background: transparent; color: var(--muted); border: none; padding: 8px; font-size: 13px; cursor: pointer; }
     .modal .skip:hover { color: var(--ink); }
-    .crypto-list { font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted); margin-top: 10px; }
-    .crypto-list .row-c { display: flex; gap: 6px; margin: 4px 0; align-items: center; }
-    .crypto-list .copy { background: transparent; border: 1px solid var(--border); border-radius: 6px; color: var(--ink); padding: 2px 8px; cursor: pointer; font-size: 11px; }
+    .crypto-list { margin-top: 14px; }
+    .coin-row { display: grid; grid-template-columns: 96px 1fr; gap: 12px; padding: 12px; background: #0a0a0c; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; align-items: center; }
+    .coin-row .qr { width: 96px; height: 96px; background: #fff; border-radius: 8px; padding: 4px; }
+    .coin-row .qr svg, .coin-row .qr img { width: 100%; height: 100%; display: block; }
+    .coin-row .info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    .coin-row .coin-name { font-weight: 700; font-size: 14px; }
+    .coin-row .networks { font-size: 11px; color: var(--muted); }
+    .coin-row .addr-wrap { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+    .coin-row .addr { font-family: ui-monospace, monospace; font-size: 11px; color: var(--ink); background: var(--bg); padding: 4px 8px; border-radius: 6px; word-break: break-all; flex: 1; line-height: 1.4; }
+    .coin-row .copy { background: transparent; border: 1px solid var(--border); border-radius: 6px; color: var(--ink); padding: 4px 10px; cursor: pointer; font-size: 11px; white-space: nowrap; }
+    .coin-row .copy:hover { border-color: var(--accent); color: var(--accent); }
+    @media (max-width: 480px) {
+      .coin-row { grid-template-columns: 1fr; }
+      .coin-row .qr { width: 140px; height: 140px; margin: 0 auto; }
+    }
   </style>
 </head>
 <body>
@@ -128,15 +140,15 @@
         <h3 style="margin:0 0 8px">☕ Support this tool</h3>
         <p style="color:var(--muted);font-size:13px;margin:4px 0 12px;">MixID runs on a laptop. Coffees keep it caffeinated. Truly optional — pick whatever's easiest for you.</p>
         <div class="options" style="grid-template-columns: 1fr 1fr 1fr">
-          <a href="https://ko-fi.com/skappyyolo" target="_blank" rel="noopener">
+          <a href="https://ko-fi.com/sarsat" target="_blank" rel="noopener">
             <span class="ic">💚</span>
             <span>Ko-fi</span>
-            <span style="color:var(--muted);font-size:11px;">0% fee</span>
+            <span style="color:var(--muted);font-size:11px;">0% fee · €/$</span>
           </a>
           <a href="https://github.com/sponsors/Skappy-Yolo" target="_blank" rel="noopener">
             <span class="ic">⭐</span>
             <span>GitHub Sponsors</span>
-            <span style="color:var(--muted);font-size:11px;">0% fee</span>
+            <span style="color:var(--muted);font-size:11px;">0% fee · recurring</span>
           </a>
           <button type="button" id="show-crypto">
             <span class="ic">₿</span>
@@ -145,10 +157,40 @@
           </button>
         </div>
         <div id="crypto-addr" class="crypto-list hidden">
-          <div class="row-c">BTC: <span id="btc">REPLACE_WITH_YOUR_BTC_ADDR</span> <button class="copy" data-copy="btc">copy</button></div>
-          <div class="row-c">ETH: <span id="eth">REPLACE_WITH_YOUR_ETH_ADDR</span> <button class="copy" data-copy="eth">copy</button></div>
-          <div class="row-c">SOL: <span id="sol">REPLACE_WITH_YOUR_SOL_ADDR</span> <button class="copy" data-copy="sol">copy</button></div>
-          <p style="color:var(--muted);font-size:11px;margin-top:8px;">No KYC, no fees beyond network gas. Replace placeholders in <code>index.html</code> with your wallet addresses.</p>
+          <div class="coin-row">
+            <div class="qr"><object data="/static/qr/btc.svg" type="image/svg+xml" aria-label="BTC QR code"></object></div>
+            <div class="info">
+              <div class="coin-name">₿ Bitcoin (BTC)</div>
+              <div class="networks">Bitcoin network only</div>
+              <div class="addr-wrap">
+                <span class="addr" id="btc-addr">1CRyaVX7tuBuzGNjBnXst7GvLdJK8YfaTW</span>
+                <button class="copy" data-copy="btc-addr">copy</button>
+              </div>
+            </div>
+          </div>
+          <div class="coin-row">
+            <div class="qr"><object data="/static/qr/evm.svg" type="image/svg+xml" aria-label="EVM QR code"></object></div>
+            <div class="info">
+              <div class="coin-name">◆ Ethereum / USDT / USDC</div>
+              <div class="networks">ERC-20 (Ethereum) <em>or</em> BEP-20 (BSC) — pick either when sending</div>
+              <div class="addr-wrap">
+                <span class="addr" id="evm-addr">0x5bfe09cb7e461b85d5893638e003a5cb99c18dbb</span>
+                <button class="copy" data-copy="evm-addr">copy</button>
+              </div>
+            </div>
+          </div>
+          <div class="coin-row">
+            <div class="qr"><object data="/static/qr/sol.svg" type="image/svg+xml" aria-label="SOL QR code"></object></div>
+            <div class="info">
+              <div class="coin-name">◎ Solana (SOL)</div>
+              <div class="networks">Solana network only</div>
+              <div class="addr-wrap">
+                <span class="addr" id="sol-addr">CEjPiMHQYXPc3NMaNb24gepLdX2iS9YYHRXNCNEt7R1</span>
+                <button class="copy" data-copy="sol-addr">copy</button>
+              </div>
+            </div>
+          </div>
+          <p style="color:var(--muted);font-size:11px;margin-top:8px;">No KYC, no fees beyond network gas. Scan QR with a phone wallet, or copy the address.</p>
         </div>
       </div>
     </main>
