@@ -41,3 +41,6 @@ bin/*
 
 # Eval corpus (keep CSV ground-truth, ignore audio files)
 eval/audio/
+
+# Agent review logs (cto-reviewer, voice-critic) — kept local
+mixid/reviews/

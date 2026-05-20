@@ -31,7 +31,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 
 from mixid.pipeline import run as pipeline_run
-from mixid.web import spotify_export, stats, url_input
+from mixid.web import mirror_search, spotify_export, stats, url_input
 
 log = logging.getLogger(__name__)
 
@@ -56,6 +56,64 @@ class Job:
 
 # Job registry — in-memory is fine for a laptop deploy
 _JOBS: dict[str, Job] = {}
+
+# Mirror-search cache: normalized URL → (timestamp, payload). 1 hour TTL,
+# cap of 200 entries. Sweep on insert.
+_MIRRORS_CACHE: dict[str, tuple[float, dict]] = {}
+_MIRRORS_TTL_SEC = 3600.0
+_MIRRORS_CACHE_MAX = 200
+
+
+def _normalize_mirror_url(url: str) -> str:
+    """Strip Spotify's ?si= share tokens and Apple's locale prefix so the same
+    logical track from different share links collapses to one cache entry."""
+    import urllib.parse as _up
+
+    try:
+        p = _up.urlsplit(url.strip())
+    except Exception:
+        return url
+    host = (p.netloc or "").lower()
+    path = p.path or ""
+    if "music.apple.com" in host:
+        # /us/album/... -> /album/...   (drop two-letter locale prefix)
+        parts = path.split("/", 2)
+        if len(parts) >= 3 and len(parts[1]) == 2 and parts[1].isalpha():
+            path = "/" + parts[2]
+        query = ""  # apple share params don't change identity
+    elif "spotify" in host:
+        query = ""  # ?si=... is share tracking; identity is in the path
+    else:
+        query = p.query
+    return _up.urlunsplit((p.scheme.lower(), host, path, query, ""))
+
+
+def _mirror_cache_get(url: str) -> dict | None:
+    norm = _normalize_mirror_url(url)
+    hit = _MIRRORS_CACHE.get(norm)
+    if not hit:
+        return None
+    if time.time() - hit[0] > _MIRRORS_TTL_SEC:
+        _MIRRORS_CACHE.pop(norm, None)
+        return None
+    return hit[1]
+
+
+def _mirror_cache_put(url: str, payload: dict) -> None:
+    now = time.time()
+    norm = _normalize_mirror_url(url)
+    _MIRRORS_CACHE[norm] = (now, payload)
+    # Sweep expired
+    if len(_MIRRORS_CACHE) > _MIRRORS_CACHE_MAX:
+        # Drop expired first
+        expired = [k for k, (t, _) in _MIRRORS_CACHE.items() if now - t > _MIRRORS_TTL_SEC]
+        for k in expired:
+            _MIRRORS_CACHE.pop(k, None)
+        # If still over cap, drop oldest by timestamp
+        if len(_MIRRORS_CACHE) > _MIRRORS_CACHE_MAX:
+            ordered = sorted(_MIRRORS_CACHE.items(), key=lambda kv: kv[1][0])
+            for k, _ in ordered[: len(_MIRRORS_CACHE) - _MIRRORS_CACHE_MAX]:
+                _MIRRORS_CACHE.pop(k, None)
 
 
 def _public_status_payload(job: Job) -> dict:
@@ -279,6 +337,25 @@ def create_app() -> FastAPI:
         if job is None:
             raise HTTPException(404, "job_id not found")
         return JSONResponse(_public_status_payload(job))
+
+    @app.get("/mirrors")
+    async def get_mirrors(url: str = Query(..., min_length=10)) -> JSONResponse:
+        """Find mirror URLs on YouTube/SoundCloud/Mixcloud/Audiomack for a
+        Spotify or Apple Music link. Result is cached for an hour."""
+        if not mirror_search.is_locked_platform(url):
+            raise HTTPException(422, "Only Spotify or Apple Music URLs need mirror search.")
+        cached = _mirror_cache_get(url)
+        if cached is not None:
+            return JSONResponse(cached)
+        loop = asyncio.get_running_loop()
+        try:
+            payload = await loop.run_in_executor(None, mirror_search.find_mirrors, url)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        except RuntimeError as e:
+            raise HTTPException(502, str(e))
+        _mirror_cache_put(url, payload)
+        return JSONResponse(payload)
 
     # ── Spotify playlist export (optional, user-initiated OAuth) ───────────
 
