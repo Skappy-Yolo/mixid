@@ -43,7 +43,7 @@ from mixid.pipeline import (
     smoother,
     url_shortcut,
 )
-from mixid.pipeline.consensus import TracklistTrack, collapse
+from mixid.pipeline.consensus import TracklistTrack, collapse, merge_scrape_with_audio
 from mixid.outputs import write_json, write_m3u, write_txt
 
 
@@ -273,36 +273,71 @@ def run(
 
     is_url = url_shortcut.detect_source(input_path_or_url) is not None
 
-    # ── 1. URL shortcut ─────────────────────────────────────────────────────
+    # ── 1. URL shortcut (scrape) ────────────────────────────────────────────
+    # Gather community tracklists from descriptions, mixesdb, 1001tracklists.
+    # Outcomes:
+    #   - Dense, timed scrape → short-circuit, skip audio entirely (cheap).
+    #   - Sparse or untimed   → run the audio pipeline, merge scrape priors
+    #                           at the end so the scrape's entries override
+    #                           audio mis-identifications and fill gaps.
+    scraped: list[url_shortcut.TracklistEntry] = []
     if is_url:
         t = time.monotonic()
-        entries = url_shortcut.try_url_shortcut(input_path_or_url)
+        scraped = url_shortcut.try_url_shortcut(input_path_or_url)
         timings["url_shortcut"] = time.monotonic() - t
-        if entries:
-            result = MixIDResult(
-                source_input=input_path_or_url,
-                tracks=_shortcut_to_tracks(entries),
-                unknown_segments=[],
-                timings_sec=timings,
-                output_dir=output_dir,
-            )
-            _write_all_outputs(result, _build_library_lookup())
-            timings["total"] = time.monotonic() - t_start
-            log.info("URL shortcut returned %d entries — pipeline short-circuit.", len(entries))
-            return result
-        else:
-            log.info("URL shortcut returned no entries — would need audio.")
-            # For v1, URL without a shortcut hit + without local audio = empty result.
-            result = MixIDResult(
-                source_input=input_path_or_url,
-                tracks=[],
-                unknown_segments=[],
-                timings_sec=timings,
-                output_dir=output_dir,
-            )
-            _write_all_outputs(result)
-            timings["total"] = time.monotonic() - t_start
-            return result
+        log.info(
+            "URL shortcut found %d entries from %d source(s).",
+            len(scraped),
+            len({e.source for e in scraped}),
+        )
+
+    can_short_circuit = False
+    if scraped and is_url:
+        timed_scraped = [e for e in scraped if e.start_sec is not None]
+        if timed_scraped:
+            meta = url_shortcut.fetch_metadata(input_path_or_url)
+            duration = float(meta.get("duration") or 0) if meta else 0.0
+            if duration > 0:
+                starts = sorted(e.start_sec for e in timed_scraped)
+                last_start = starts[-1]
+                coverage = last_start / duration
+                density = len(starts) / (duration / 60.0)  # entries/min
+                # Internal-gap check: even if coverage and density look good,
+                # a 30-min hole in the middle would silently lose audio that
+                # might fill it. Cap the largest gap (including head and tail)
+                # so we don't short-circuit on entries clustered at the ends.
+                gaps = [starts[i + 1] - starts[i] for i in range(len(starts) - 1)]
+                gaps.append(starts[0])                # head: 0 → first entry
+                gaps.append(duration - last_start)    # tail: last entry → end
+                max_gap = max(gaps) if gaps else duration
+                _MAX_INTERNAL_GAP_SEC = 300.0  # 5 min
+                can_short_circuit = (
+                    coverage >= 0.8
+                    and density >= (1 / 3)
+                    and max_gap <= _MAX_INTERNAL_GAP_SEC
+                )
+                log.info(
+                    "Scrape density: coverage=%.2f density=%.2f/min max_gap=%.0fs → short_circuit=%s",
+                    coverage, density, max_gap, can_short_circuit,
+                )
+
+    if can_short_circuit:
+        result = MixIDResult(
+            source_input=input_path_or_url,
+            tracks=_shortcut_to_tracks(scraped),
+            unknown_segments=[],
+            timings_sec=timings,
+            output_dir=output_dir,
+        )
+        _write_all_outputs(result, _build_library_lookup())
+        timings["total"] = time.monotonic() - t_start
+        log.info("Dense scrape — pipeline short-circuit, %d tracks.", len(scraped))
+        return result
+
+    if is_url and not scraped:
+        log.info("URL shortcut returned no entries; running audio pipeline.")
+    elif is_url:
+        log.info("Sparse scrape (%d entries); running audio + merging at end.", len(scraped))
 
     # ── 2-4. Audio pipeline ────────────────────────────────────────────────
     t = time.monotonic()
@@ -425,6 +460,18 @@ def run(
 
     # ── 6. Consensus collapse ──────────────────────────────────────────────
     tracks = collapse(reranked)
+
+    # ── 6.5 Scrape ↔ audio merge ───────────────────────────────────────────
+    # If we had scraped entries but the scrape wasn't dense enough to
+    # short-circuit, fold the scrape back in now as priors. Scrape
+    # sources outrank audio at any matching timestamp.
+    if scraped:
+        t = time.monotonic()
+        tracks, unknown_segments = merge_scrape_with_audio(
+            scraped, tracks, unknown_segments,
+            mix_duration_sec=prepared.duration_secs,
+        )
+        timings["scrape_merge"] = time.monotonic() - t
 
     # ── 7. Outputs ──────────────────────────────────────────────────────────
     result = MixIDResult(

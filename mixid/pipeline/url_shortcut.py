@@ -136,11 +136,78 @@ def parse_timestamped_tracklist(text: str, source: str) -> list[TracklistEntry]:
     return entries
 
 
+# Untimed numbered/bulleted lists. Some DJs write tracklists without
+# timestamps. We require a 'tracklist' keyword in the preceding text
+# AND at least 5 matching lines to suppress false positives like
+# "follow me at: 1) twitter 2) instagram ...".
+_UNTIMED_LINE = re.compile(
+    r"""
+    ^\s*
+    (?:\d+\s*[.\)]\s*|[-•*]\s+)            # leading "1.", "1)", "-", "•", "*"
+    (?P<rest>(?:[^-–—|]+?\s+[-–—|]\s+.+))  # must contain a separator
+    \s*$
+    """,
+    re.VERBOSE,
+)
+
+_TRACKLIST_KEYWORD = re.compile(r"\b(tracklist|track\s*list|songs?\s*played|tracklisting)\b", re.I)
+
+_MIN_UNTIMED_LINES = 5
+
+
+def parse_untimed_tracklist(text: str, source: str) -> list[TracklistEntry]:
+    """Parse a numbered/bulleted artist-title list with no timestamps.
+
+    Returns entries with `start_sec=None`. Heuristic guard:
+      - at least one 'tracklist' / 'songs played' keyword in the text
+      - at least _MIN_UNTIMED_LINES matching lines
+
+    Both guards exist to avoid mis-parsing 'follow me at: 1) twitter
+    2) instagram' style social-link lists.
+    """
+    if not _TRACKLIST_KEYWORD.search(text):
+        return []
+    raw_matches: list[tuple[str, str]] = []  # (artist, title)
+    for line in text.splitlines():
+        if _TS_LINE.match(line):
+            # If a line is already timed, parse_timestamped_tracklist owns it.
+            continue
+        m = _UNTIMED_LINE.match(line)
+        if not m:
+            continue
+        artist, title = _split_artist_title(m.group("rest"))
+        if not title:
+            continue
+        raw_matches.append((artist, title))
+    if len(raw_matches) < _MIN_UNTIMED_LINES:
+        return []
+    return [
+        TracklistEntry(start_sec=None, artist=a, title=t, source=source)
+        for a, t in raw_matches
+    ]
+
+
 # ── yt-dlp metadata fetch (description, title) ──────────────────────────────
+
+# Tiny in-process cache so the density gate in run.py and the
+# orchestrator in this module don't both pay the yt-dlp subprocess cost
+# (2-5s each) on the same URL. 5-minute TTL is enough for a single
+# pipeline run; not meant to survive across runs.
+import time as _time
+
+_META_CACHE: dict[str, tuple[float, dict | None]] = {}
+_META_TTL_SEC = 300.0
 
 
 def fetch_metadata(url: str, ytdlp_exe: str = "yt-dlp") -> dict | None:
-    """Fetch metadata for a URL via yt-dlp --dump-json. Returns parsed dict or None."""
+    """Fetch metadata for a URL via yt-dlp --dump-json. Returns parsed dict or None.
+
+    Cached in-process for 5 min so duplicate calls within the same
+    pipeline run reuse the same subprocess result.
+    """
+    hit = _META_CACHE.get(url)
+    if hit and (_time.time() - hit[0]) <= _META_TTL_SEC:
+        return hit[1]
     try:
         res = subprocess.run(
             [ytdlp_exe, "--skip-download", "--dump-single-json", url],
@@ -148,14 +215,18 @@ def fetch_metadata(url: str, ytdlp_exe: str = "yt-dlp") -> dict | None:
         )
     except FileNotFoundError:
         log.warning("yt-dlp not found at %r — install or set YTDLP_EXE", ytdlp_exe)
+        _META_CACHE[url] = (_time.time(), None)
         return None
     if res.returncode != 0:
         log.warning("yt-dlp failed for %s: %s", url, res.stderr[:200])
+        _META_CACHE[url] = (_time.time(), None)
         return None
     try:
-        return json.loads(res.stdout)
+        parsed = json.loads(res.stdout)
     except json.JSONDecodeError:
-        return None
+        parsed = None
+    _META_CACHE[url] = (_time.time(), parsed)
+    return parsed
 
 
 # ── mixesdb MediaWiki ───────────────────────────────────────────────────────
@@ -258,13 +329,85 @@ def fetch_mixesdb_page(page_title: str) -> str | None:
 # ── Orchestrator ────────────────────────────────────────────────────────────
 
 
+# Source priority. Higher = wins on overlap inside the dedup window.
+# Order: community-curated > user-written > untimed (lowest confidence).
+SOURCE_PRIORITY: dict[str, int] = {
+    "1001tracklists": 4,
+    "mixesdb": 3,
+    "youtube_description": 2,
+    "soundcloud_description": 2,
+    "mixcloud_description": 2,
+    "youtube_description_untimed": 1,
+    "soundcloud_description_untimed": 1,
+    "mixcloud_description_untimed": 1,
+}
+
+
+def _normalize_for_dedup(s: str) -> str:
+    """Lowercase, collapse whitespace, strip wrapping punctuation."""
+    s = (s or "").lower().strip()
+    s = re.sub(r"\s+", " ", s)
+    s = re.sub(r"[^\w\s]", "", s)
+    return s
+
+
+def _merge_and_dedup(
+    entries: list[TracklistEntry], window_sec: float = 30.0
+) -> list[TracklistEntry]:
+    """Merge across sources. Timed entries dedup by position; untimed by name.
+
+    For two timed entries within `window_sec`:
+      - same (normalized artist+title) → keep higher-priority source
+      - different (artist+title)       → keep higher-priority source (community
+                                         > user-written), discard the other
+    Untimed entries are added only if their normalized (artist, title) is not
+    already represented by a kept entry.
+    """
+    timed = [e for e in entries if e.start_sec is not None]
+    untimed = [e for e in entries if e.start_sec is None]
+    # Sort by start_sec, then by priority descending so the highest-priority
+    # entry at a given timestamp shows up first in any window.
+    timed.sort(key=lambda e: (e.start_sec, -SOURCE_PRIORITY.get(e.source, 0)))
+
+    kept: list[TracklistEntry] = []
+    for e in timed:
+        if kept and abs(kept[-1].start_sec - e.start_sec) < window_sec:
+            prev = kept[-1]
+            if SOURCE_PRIORITY.get(e.source, 0) > SOURCE_PRIORITY.get(prev.source, 0):
+                kept[-1] = e
+            # else: drop e (prev had higher or equal priority)
+            continue
+        kept.append(e)
+
+    seen_names = {
+        (_normalize_for_dedup(e.artist), _normalize_for_dedup(e.title)) for e in kept
+    }
+    for e in untimed:
+        key = (_normalize_for_dedup(e.artist), _normalize_for_dedup(e.title))
+        if key in seen_names:
+            continue
+        kept.append(e)
+        seen_names.add(key)
+    return kept
+
+
 def try_url_shortcut(url: str, ytdlp_exe: str = "yt-dlp") -> list[TracklistEntry]:
-    """Try every shortcut path. Returns whatever was found, ordered by likelihood."""
+    """Aggregate tracklist entries from every available source.
+
+    Sources tried:
+      - YouTube/SoundCloud/Mixcloud description (timed)
+      - Same description (untimed numbered/bulleted list) — fallback
+      - mixesdb.com search + wikitext
+      - 1001tracklists.com search + page
+
+    Returns the merged + deduped list, sorted by start_sec
+    (entries with start_sec=None sort last).
+    """
     src = detect_source(url)
     if src is None:
         return []
 
-    candidates: list[TracklistEntry] = []
+    all_entries: list[TracklistEntry] = []
     inferred_title = ""
 
     if src in ("youtube", "soundcloud", "mixcloud"):
@@ -275,18 +418,32 @@ def try_url_shortcut(url: str, ytdlp_exe: str = "yt-dlp") -> list[TracklistEntry
             description_entries = parse_timestamped_tracklist(
                 desc, source=f"{src}_description"
             )
-            if description_entries:
-                candidates.extend(description_entries)
+            all_entries.extend(description_entries)
+            # Only try untimed parser if no timed lines were found; untimed
+            # entries in the SAME description are usually redundant overflow.
+            if not description_entries:
+                all_entries.extend(
+                    parse_untimed_tracklist(desc, source=f"{src}_description_untimed")
+                )
 
-    # Always try mixesdb regardless — community lists often cover descriptions.
+    # mixesdb: community-curated, free, no auth
     search_term = inferred_title if inferred_title else url
     hits = search_mixesdb(search_term)
     if hits:
         wikitext = fetch_mixesdb_page(hits[0]["title"])
         if wikitext:
-            mixesdb_entries = parse_mixesdb_wikitext(wikitext)
-            if mixesdb_entries and not candidates:
-                # Only fall back to mixesdb if the description scrape produced nothing
-                candidates = mixesdb_entries
+            all_entries.extend(parse_mixesdb_wikitext(wikitext))
 
-    return candidates
+    # 1001tracklists: community-curated, Cloudflare-protected, may return []
+    if inferred_title:
+        try:
+            # Lazy import to avoid a hard dep cycle and to keep this module
+            # importable without bs4 for the unit tests that don't need it.
+            from mixid.pipeline import tracklists1001
+            all_entries.extend(
+                tracklists1001.try_1001tracklists(url, inferred_title)
+            )
+        except ImportError:
+            log.debug("tracklists1001 module unavailable; skipping")
+
+    return _merge_and_dedup(all_entries)
