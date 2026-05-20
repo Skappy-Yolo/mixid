@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>MixID — find every song in a DJ mix</title>
-  <meta name="description" content="Upload a DJ mix or paste a YouTube/SoundCloud/Mixcloud/Audiomack link. MixID identifies the tracks and returns a timestamped tracklist." />
+  <title>MixID, find every song in a DJ mix</title>
+  <meta name="description" content="Drop a DJ mix or paste a link. Get the full tracklist with timestamps. Free, no login." />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="theme-color" content="#0f0f10" />
   <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%230f0f10'/><text x='50%25' y='58%25' font-size='32' text-anchor='middle' font-family='system-ui' fill='%23f6c453' font-weight='800'>M</text></svg>" />
@@ -39,10 +39,21 @@
     input[type=file] { display: none; }
     input[type=url], input[type=text] { width: 100%; padding: 12px; background: #0a0a0c; border: 1px solid var(--border); border-radius: 10px; color: var(--ink); font-size: 14px; }
     input[type=url]:focus, input[type=text]:focus { outline: none; border-color: var(--accent); }
-    .platform-pills { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
-    .pill { font-size: 11px; padding: 4px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+    .platform-pills { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); background: rgba(255,255,255,0.02); }
+    .pill img { display: block; flex-shrink: 0; }
     .pill.ok { color: var(--good); border-color: rgba(90,207,128,0.2); }
     .pill.bad { color: var(--warn); border-color: rgba(246,161,74,0.2); cursor: help; }
+    #mirror-picker { margin-top: 10px; font-size: 13px; }
+    #mirror-picker .mp-head { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+    #mirror-picker .mp-row { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 8px 10px; background: #0a0a0c; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px; }
+    #mirror-picker .mp-row img { display: block; }
+    #mirror-picker .mp-title { color: var(--ink); font-size: 13px; line-height: 1.3; }
+    #mirror-picker .mp-meta { color: var(--muted); font-size: 11px; margin-top: 2px; }
+    #mirror-picker .mp-use { background: transparent; color: var(--accent); border: 1px solid var(--accent); border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 12px; white-space: nowrap; }
+    #mirror-picker .mp-use:hover { background: var(--accent); color: #111; }
+    #mirror-picker .mp-empty { color: var(--muted); font-size: 12px; padding: 10px; background: rgba(246,161,74,0.06); border: 1px solid rgba(246,161,74,0.18); border-radius: 8px; }
+    #mirror-picker .mp-loading { color: var(--muted); font-size: 12px; padding: 8px 10px; }
     .row { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
     button.go { background: var(--accent); color: #111; border: none; border-radius: 10px; padding: 12px 20px; font-weight: 700; cursor: pointer; font-size: 15px; }
     button.go:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -55,13 +66,12 @@
     .status .dot.error { background: var(--bad); }
     @keyframes pulse { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
     .tracklist { margin-top: 14px; }
-    .track { display: grid; grid-template-columns: 56px 1fr auto; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); align-items: center; }
+    .track { display: grid; grid-template-columns: 56px 1fr; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); align-items: center; }
     .track:last-child { border-bottom: none; }
     .ts { color: var(--accent); font-feature-settings: "tnum"; font-size: 13px; }
     .title-line { font-size: 14px; }
     .title-line .artist { color: var(--muted); }
     .title-line .title { color: var(--ink); }
-    .src-tag { color: var(--muted); font-size: 11px; text-align: right; }
     .unknown { color: var(--muted); font-style: italic; }
     .downloads { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
     .downloads a, .downloads button { background: #0a0a0c; border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; color: var(--ink); text-decoration: none; font-size: 13px; cursor: pointer; }
@@ -79,6 +89,18 @@
     .modal .options a, .modal .options button { display: flex; flex-direction: column; align-items: center; padding: 14px 10px; background: #0a0a0c; border: 1px solid var(--border); border-radius: 10px; color: var(--ink); text-decoration: none; cursor: pointer; gap: 6px; font-size: 13px; }
     .modal .options a:hover { border-color: var(--accent); }
     .modal .options .ic { font-size: 22px; }
+    .donate-options { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-top: 4px; }
+    .donate-options a, .donate-options button { display: flex; flex-direction: column; align-items: center; padding: 16px 12px; background: #0a0a0c; border: 1px solid var(--border); border-radius: 12px; color: var(--ink); text-decoration: none; cursor: pointer; gap: 8px; font-size: 13px; font-family: inherit; }
+    .donate-options a:hover, .donate-options button:hover { border-color: var(--accent); }
+    .donate-options .ic { font-size: 24px; line-height: 1; }
+    @media (max-width: 600px) { .donate-options { grid-template-columns: 1fr; } }
+    .resume-banner { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 10px; font-size: 13px; margin: 10px 0 0; border: 1px solid var(--accent); background: rgba(246,196,83,0.06); color: var(--ink); flex-wrap: wrap; }
+    .resume-banner .rb-text { flex: 1; min-width: 180px; }
+    .resume-banner .rb-actions { display: flex; gap: 8px; }
+    .resume-banner button { background: transparent; color: var(--accent); border: 1px solid var(--accent); border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 12px; font-family: inherit; }
+    .resume-banner button.rb-secondary { color: var(--muted); border-color: var(--border); }
+    .resume-banner button:hover { background: var(--accent); color: #111; }
+    .resume-banner button.rb-secondary:hover { background: transparent; color: var(--ink); border-color: var(--muted); }
     .modal .skip { margin-top: 12px; display: block; width: 100%; text-align: center; background: transparent; color: var(--muted); border: none; padding: 8px; font-size: 13px; cursor: pointer; }
     .modal .skip:hover { color: var(--ink); }
     .crypto-list { margin-top: 14px; }
@@ -106,10 +128,17 @@
   <div class="wrap">
     <header>
       <h1>Mix<span class="dot">ID</span></h1>
-      <div class="tagline">Paste a mix URL or upload a recording — get the full tracklist. No login. Free.</div>
+      <div class="tagline">Paste a mix link or drop the file. Every track named with timestamps.</div>
       <div id="load-banner" class="load-banner free" style="margin-top:14px;display:none;">
         <span class="ind pulse"></span>
-        <span id="load-text">Checking server load…</span>
+        <span id="load-text">Checking server load...</span>
+      </div>
+      <div id="resume-banner" class="resume-banner" style="display:none;">
+        <span class="rb-text" id="resume-text"></span>
+        <span class="rb-actions">
+          <button type="button" id="resume-yes">Continue</button>
+          <button type="button" id="resume-no" class="rb-secondary">Start fresh</button>
+        </span>
       </div>
     </header>
 
@@ -121,20 +150,15 @@
         </div>
 
         <div id="pane-url">
-          <input type="url" id="url" placeholder="paste your mix URL — YouTube / SoundCloud / Mixcloud / Audiomack" />
+          <input type="url" id="url" placeholder="paste a YouTube, SoundCloud, Mixcloud or Audiomack link" />
           <div class="platform-pills">
-            <span class="pill ok" title="Supported">▶ YouTube</span>
-            <span class="pill ok" title="Supported">☁ SoundCloud</span>
-            <span class="pill ok" title="Supported">🎚 Mixcloud</span>
-            <span class="pill ok" title="Supported">♪ Audiomack</span>
-            <span class="pill bad" title="Spotify protects its audio — paste the YouTube/SoundCloud version instead">🟢 Spotify (not supported)</span>
+            <span class="pill ok" title="Supported"><img src="/static/logos/youtube.png" alt="" width="14" height="14" /> YouTube</span>
+            <span class="pill ok" title="Supported"><img src="/static/logos/soundcloud.png" alt="" width="14" height="14" /> SoundCloud</span>
+            <span class="pill ok" title="Supported"><img src="/static/logos/mixcloud.png" alt="" width="14" height="14" /> Mixcloud</span>
+            <span class="pill ok" title="Supported"><img src="/static/logos/audiomack.png" alt="" width="14" height="14" /> Audiomack</span>
+            <span class="pill bad" title="Spotify locks its audio. Paste the link anyway, I'll find it on the others."><img src="/static/logos/spotify.png" alt="" width="14" height="14" /> Spotify</span>
           </div>
-          <p style="font-size:11px;color:var(--muted);margin:6px 0 0;">If your mix is on Spotify or Apple Music, paste the YouTube / SoundCloud / Mixcloud / Audiomack mirror — those platforms let us fetch audio automatically.</p>
-          <div id="spotify-warn" class="hidden" style="font-size:12px;color:var(--warn);margin:8px 0 0;padding:10px;background:rgba(246,161,74,0.08);border-radius:8px;border:1px solid rgba(246,161,74,0.2);">
-            Spotify locks audio — we can't fetch it automatically (this is true for everyone, not a MixID limit).
-            <br><br>
-            Most DJ mixes are <strong>also</strong> on YouTube, SoundCloud, or Mixcloud. <a id="search-yt" href="#" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline;">Search YouTube for this mix →</a>
-          </div>
+          <div id="mirror-picker" class="hidden"></div>
         </div>
 
         <div id="pane-file" class="hidden">
@@ -148,9 +172,9 @@
 
         <div class="row">
           <span style="flex:1"></span>
-          <button id="go" class="go" type="button" disabled>Generate tracklist</button>
+          <button id="go" class="go" type="button" disabled>Find every track</button>
         </div>
-        <p style="color:var(--muted);font-size:11px;margin-top:8px;">A 1-hour mix usually takes ~20–30 min. You can minimise this tab — we'll notify you when it's ready.</p>
+        <p style="color:var(--muted);font-size:11px;margin-top:8px;">A 1-hour mix takes about 20 to 30 minutes. Close this tab if you want, I'll ping your browser when it's done.</p>
 
         <div id="status" class="status hidden">
           <span class="dot" id="statusdot"></span>
@@ -166,9 +190,9 @@
       </div>
 
       <div class="card" id="donate">
-        <h3 style="margin:0 0 8px">☕ Support this tool</h3>
-        <p style="color:var(--muted);font-size:13px;margin:4px 0 12px;">MixID runs on a laptop. Coffees keep it caffeinated. Truly optional — pick whatever's easiest for you.</p>
-        <div class="options" style="grid-template-columns: 1fr 1fr 1fr">
+        <h3 style="margin:0 0 8px">Keep this running</h3>
+        <p style="color:var(--muted);font-size:13px;margin:4px 0 12px;">MixID has real running costs. APIs, cloud, the lot. If it found your tracks, a coffee covers a few more mixes for the next person.</p>
+        <div class="options donate-options">
           <a href="https://ko-fi.com/sarsat" target="_blank" rel="noopener">
             <span class="ic">💚</span>
             <span>Ko-fi</span>
@@ -202,7 +226,7 @@
             <div class="qr"><object data="/static/qr/evm.svg" type="image/svg+xml" aria-label="EVM QR code"></object></div>
             <div class="info">
               <div class="coin-name">◆ Ethereum / USDT / USDC</div>
-              <div class="networks">ERC-20 (Ethereum) <em>or</em> BEP-20 (BSC) — pick either when sending</div>
+              <div class="networks">ERC-20 (Ethereum) <em>or</em> BEP-20 (BSC). Pick either when sending.</div>
               <div class="addr-wrap">
                 <span class="addr" id="evm-addr">0x5bfe09cb7e461b85d5893638e003a5cb99c18dbb</span>
                 <button class="copy" data-copy="evm-addr">copy</button>
@@ -222,26 +246,26 @@
               </div>
             </div>
           </div>
-          <p style="color:var(--muted);font-size:11px;margin-top:8px;">No KYC. No fees beyond network gas. On mobile, tap "Open in wallet" — opens your installed app (MetaMask, Phantom, Trust, etc.) with the address pre-filled. On desktop, scan the QR with your phone wallet.</p>
+          <p style="color:var(--muted);font-size:11px;margin-top:8px;">No KYC. No fees beyond network gas. On mobile, tap "Open in wallet" to open your installed app (MetaMask, Phantom, Trust, etc.) with the address pre-filled. On desktop, scan the QR with your phone wallet.</p>
         </div>
       </div>
     </main>
 
     <footer>
-      <div><span class="count" id="count">…</span> mixes processed since launch · <a href="https://github.com/Skappy-Yolo/mixid" target="_blank">source</a> · <a href="#donate">support</a></div>
+      <div><span class="count" id="count">…</span> mixes named since launch · <a href="#donate">support</a></div>
     </footer>
   </div>
 
   <!-- Pre-result donation modal -->
   <div id="donateModal" class="modal-bg hidden">
     <div class="modal">
-      <h3>Almost done 🎧</h3>
-      <p>Your tracklist's ready. Before you see it — MixID is free, no ads, no login. It runs on a laptop I'm paying for out of pocket. If it helped you, throw a coffee:</p>
+      <h3>Tracklist's ready</h3>
+      <p>Before I show you, MixID has no ads, no login, no signup. Every mix costs me real money in API calls and cloud. If this saved you an hour of Shazaming your phone at the speaker, a coffee keeps the lights on:</p>
       <div class="options">
-        <a href="https://ko-fi.com/skappyyolo" target="_blank" rel="noopener">
+        <a href="https://ko-fi.com/sarsat" target="_blank" rel="noopener">
           <span class="ic">💚</span>
           <span>Ko-fi</span>
-          <span style="color:var(--muted);font-size:11px;">€5 = 1 month of mixes for someone else</span>
+          <span style="color:var(--muted);font-size:11px;">€5 covers a month of mixes for someone else</span>
         </a>
         <a href="https://github.com/sponsors/Skappy-Yolo" target="_blank" rel="noopener">
           <span class="ic">⭐</span>
@@ -249,7 +273,7 @@
           <span style="color:var(--muted);font-size:11px;">0% fee, recurring or one-time</span>
         </a>
       </div>
-      <button class="skip" type="button" id="skipDonate">Skip — just show me the tracklist</button>
+      <button class="skip" type="button" id="skipDonate">I don't care about the cost you incur, just give me the tracklist</button>
     </div>
   </div>
 
@@ -292,17 +316,82 @@
       if (f) { filenameDisplay.textContent = f.name; filenameDisplay.style.display = 'block'; }
       validate();
     });
+    const mirrorPicker = $('mirror-picker');
+    let mirrorSeq = 0;
+    const PLATFORM_LABELS = { youtube: 'YouTube', soundcloud: 'SoundCloud', mixcloud: 'Mixcloud', audiomack: 'Audiomack' };
+    function fmtDuration(s) {
+      if (s == null) return '';
+      s = Math.floor(s);
+      const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+      return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}` : `${m}:${String(sec).padStart(2,'0')}`;
+    }
+    function isLockedUrl(u) {
+      const l = u.toLowerCase();
+      return l.includes('open.spotify') || l.includes('spotify.com') || l.includes('music.apple.com');
+    }
+    async function fetchMirrors(url) {
+      const seq = ++mirrorSeq;
+      mirrorPicker.classList.remove('hidden');
+      mirrorPicker.innerHTML = '<div class="mp-loading">Checking YouTube, SoundCloud, Mixcloud, Audiomack...</div>';
+      // 75-second client-side timeout (server's worst case is ~66s).
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 75000);
+      let data;
+      try {
+        const r = await fetch('/mirrors?url=' + encodeURIComponent(url), { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (!r.ok) {
+          if (seq !== mirrorSeq) return;
+          const msg = (await r.text()) || ('HTTP ' + r.status);
+          mirrorPicker.innerHTML = `<div class="mp-empty">Couldn't read that link. ${escape(msg)}</div>`;
+          return;
+        }
+        data = await r.json();
+      } catch (e) {
+        clearTimeout(timeoutId);
+        if (seq !== mirrorSeq) return;
+        const msg = e.name === 'AbortError' ? 'Search took too long. Try a different link?' : (e.message || 'Network error.');
+        mirrorPicker.innerHTML = `<div class="mp-empty">${escape(msg)}</div>`;
+        return;
+      }
+      if (seq !== mirrorSeq) return;
+      const cands = (data.candidates || []).filter(c => c.url && c.score > 0).slice(0, 5);
+      if (!cands.length) {
+        mirrorPicker.innerHTML = `<div class="mp-empty">Nothing on YouTube, SoundCloud, Mixcloud or Audiomack for <strong>${escape(data.source?.title || '')}${data.source?.artist ? ' by ' + escape(data.source.artist) : ''}</strong>. Spotify locks audio so this one's a dead end. Try another link?</div>`;
+        return;
+      }
+      const head = `<div class="mp-head">Found <strong>${escape(data.source?.title || '')}${data.source?.artist ? ' by ' + escape(data.source.artist) : ''}</strong> on:</div>`;
+      const rows = cands.map(c => `
+        <div class="mp-row">
+          <img src="/static/logos/${c.platform}.png" alt="" width="20" height="20" />
+          <div>
+            <div class="mp-title">${escape(c.title || '')}</div>
+            <div class="mp-meta">${escape(PLATFORM_LABELS[c.platform] || c.platform)}${c.duration_sec ? ' • ' + fmtDuration(c.duration_sec) : ''}</div>
+          </div>
+          <button class="mp-use" type="button" data-url="${escape(c.url)}">use this</button>
+        </div>
+      `).join('');
+      mirrorPicker.innerHTML = head + rows;
+      mirrorPicker.querySelectorAll('.mp-use').forEach(btn => {
+        btn.addEventListener('click', () => {
+          urlInput.value = btn.dataset.url;
+          mirrorPicker.classList.add('hidden');
+          mirrorPicker.innerHTML = '';
+          validate();
+        });
+      });
+    }
+    let mirrorDebounce;
     urlInput.addEventListener('input', () => {
       validate();
-      // Friendly Spotify warning — don't disable the button, just warn + offer a YouTube search shortcut
       const u = (urlInput.value || '').trim();
-      const lower = u.toLowerCase();
-      const spotify = lower.includes('spotify.com') || lower.includes('open.spotify');
-      $('spotify-warn').classList.toggle('hidden', !spotify);
-      if (spotify) {
-        // Build a YouTube search URL — best-effort: strip the Spotify path and use it as the search query
-        const slug = u.replace(/^https?:\/\/[^\/]+\//, '').replace(/[\/\-_]+/g, ' ').replace(/\?.*$/, '').trim();
-        $('search-yt').href = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(slug + ' dj mix');
+      clearTimeout(mirrorDebounce);
+      if (isLockedUrl(u) && (u.startsWith('http://') || u.startsWith('https://'))) {
+        mirrorDebounce = setTimeout(() => fetchMirrors(u), 350);
+      } else {
+        mirrorPicker.classList.add('hidden');
+        mirrorPicker.innerHTML = '';
+        mirrorSeq++;  // invalidate any in-flight request
       }
     });
     ['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('hover'); }));
@@ -350,11 +439,11 @@
         banner.classList.remove('free', 'busy', 'swamped');
         banner.classList.add(l.state);
         if (l.state === 'free') {
-          text.textContent = `Ready — typical wait ~30 min for a 1-hour mix.`;
+          text.textContent = `Ready. About 30 minutes for a 1-hour mix.`;
         } else if (l.state === 'busy') {
-          text.textContent = `${l.queue_depth} mix${l.queue_depth > 1 ? 'es' : ''} ahead — your wait ≈ ${l.eta_minutes_for_1h_mix} min for a 1-hour mix.`;
+          text.textContent = `${l.queue_depth} mix${l.queue_depth > 1 ? 'es' : ''} in front of you. About ${l.eta_minutes_for_1h_mix} minutes for a 1-hour mix.`;
         } else {
-          text.textContent = `Swamped (${l.queue_depth} ahead). Try again in an hour.`;
+          text.textContent = `Backed up (${l.queue_depth} in queue). Try again in an hour.`;
         }
       } catch { $('load-banner').style.display = 'none'; }
     }
@@ -375,17 +464,82 @@
       try { new Notification(title, { body, icon: '/manifest.webmanifest' }); } catch {}
     }
 
+    const RESUME_KEY = 'mixid:job';
+    function saveResume(jobId, sourceLabel) {
+      try { localStorage.setItem(RESUME_KEY, JSON.stringify({ job_id: jobId, source_label: sourceLabel || '', stored_at: Date.now() / 1000 })); } catch {}
+    }
+    function clearResume() {
+      try { localStorage.removeItem(RESUME_KEY); } catch {}
+    }
+    function readResume() {
+      try { const s = localStorage.getItem(RESUME_KEY); return s ? JSON.parse(s) : null; } catch { return null; }
+    }
+
+    function pollJob(jobId) {
+      // Cap consecutive failures so a dropped backend doesn't silently
+      // present as a frozen page. 10 retries * ~6s = ~60s of grace.
+      let consecutiveErrors = 0;
+      const MAX_POLL_ERRORS = 10;
+      const poll = async () => {
+        try {
+          const r = await fetch('/jobs/' + jobId);
+          if (!r.ok) {
+            if (r.status === 404) {
+              clearResume();
+              setStatus('error', 'That job was lost when the server restarted. Start a new one?');
+              go.disabled = false;
+              return;
+            }
+            throw new Error(r.status);
+          }
+          consecutiveErrors = 0;
+          const j = await r.json();
+          if (j.status === 'done') {
+            setStatus('done', 'Found ' + (j.result.tracks?.length || 0) + ' tracks.');
+            notify('Your tracklist\'s ready', 'Found ' + (j.result.tracks?.length || 0) + ' tracks.');
+            lastResultJob = j;
+            clearResume();
+            donateModal.classList.remove('hidden');
+            fetchStats();
+            go.disabled = false;
+            return;
+          }
+          if (j.status === 'error') {
+            setStatus('error', 'Pipeline error: ' + j.error);
+            clearResume();
+            go.disabled = false;
+            return;
+          }
+          if (j.started_at) {
+            const elapsed = Math.floor(Date.now() / 1000 - j.started_at);
+            setStatus('running', `Listening, ${Math.floor(elapsed/60)}m ${elapsed%60}s in. You can close this tab.`);
+          }
+          setTimeout(poll, 4000);
+        } catch {
+          consecutiveErrors++;
+          if (consecutiveErrors >= MAX_POLL_ERRORS) {
+            setStatus('error', "Lost contact with the server. Refresh to try again.");
+            go.disabled = false;
+            return;
+          }
+          setTimeout(poll, 6000);
+        }
+      };
+      setTimeout(poll, 1500);
+    }
+
     go.addEventListener('click', async () => {
       go.disabled = true;
       tracklist.innerHTML = '';
       downloads.innerHTML = '';
       resultcard.classList.add('hidden');
-      setStatus('running', currentTab === 'url' ? 'Fetching audio from URL…' : 'Uploading…');
+      setStatus('running', currentTab === 'url' ? 'Pulling audio from the link...' : 'Uploading...');
       ensureNotificationPerm();
 
       const fd = new FormData();
-      if (currentTab === 'file') fd.append('file', fileInput.files[0]);
-      else fd.append('url', urlInput.value.trim());
+      let label = '';
+      if (currentTab === 'file') { fd.append('file', fileInput.files[0]); label = fileInput.files[0]?.name || ''; }
+      else { const u = urlInput.value.trim(); fd.append('url', u); label = u; }
       // Always 'auto' — the pipeline decides Deep Scan itself based on unknown ratio.
       fd.append('with_demucs', 'auto');
 
@@ -400,37 +554,63 @@
         return;
       }
 
-      setStatus('running', 'Analyzing… 1-hour mix usually needs ~20–30 min. You can leave this tab.');
-
-      const poll = async () => {
-        try {
-          const r = await fetch('/jobs/' + job.job_id);
-          if (!r.ok) throw new Error(r.status);
-          const j = await r.json();
-          if (j.status === 'done') {
-            setStatus('done', 'Done. ' + (j.result.tracks?.length || 0) + ' tracks identified.');
-            notify('MixID is done', (j.result.tracks?.length || 0) + ' tracks identified.');
-            lastResultJob = j;
-            // Show donation modal first
-            donateModal.classList.remove('hidden');
-            fetchStats();
-            go.disabled = false;
-            return;
-          }
-          if (j.status === 'error') {
-            setStatus('error', 'Pipeline error: ' + j.error);
-            go.disabled = false;
-            return;
-          }
-          if (j.started_at) {
-            const elapsed = Math.floor(Date.now() / 1000 - j.started_at);
-            setStatus('running', `Analyzing — ${Math.floor(elapsed/60)}m ${elapsed%60}s elapsed. Leave this tab if you want.`);
-          }
-          setTimeout(poll, 4000);
-        } catch { setTimeout(poll, 6000); }
-      };
-      setTimeout(poll, 1500);
+      saveResume(job.job_id, label);
+      setStatus('running', 'Listening. A 1-hour mix takes about 20 to 30 minutes. Feel free to close this tab.');
+      pollJob(job.job_id);
     });
+
+    // ── Refresh resume ────────────────────────────────────────────────────
+    // Job registry is in-memory on the server, so a backend restart loses
+    // the entry. The 404 branch in pollJob handles that gracefully.
+    async function tryResumeJob() {
+      const saved = readResume();
+      if (!saved || !saved.job_id) return;
+      let j;
+      try {
+        const r = await fetch('/jobs/' + saved.job_id);
+        if (!r.ok) { clearResume(); return; }
+        j = await r.json();
+      } catch { return; }
+      const banner = $('resume-banner'), text = $('resume-text'), yes = $('resume-yes'), no = $('resume-no');
+      const label = saved.source_label || j.source_label || 'your last mix';
+      if (j.status === 'done') {
+        text.textContent = `Your tracklist for ${label} is ready.`;
+        yes.textContent = 'Show it';
+        no.textContent = 'Start fresh';
+        banner.style.display = 'flex';
+        const handleYes = () => {
+          banner.style.display = 'none';
+          clearResume();
+          lastResultJob = j;
+          renderResult(j);
+        };
+        const handleNo = () => { banner.style.display = 'none'; clearResume(); };
+        yes.onclick = handleYes; no.onclick = handleNo;
+        return;
+      }
+      if (j.status === 'pending' || j.status === 'running') {
+        const elapsed = j.started_at ? Math.floor(Date.now() / 1000 - j.started_at) : 0;
+        const mins = Math.max(0, Math.floor(elapsed / 60));
+        text.textContent = mins > 0
+          ? `You had ${label} running, ${mins} minute${mins === 1 ? '' : 's'} in. Continue?`
+          : `You had ${label} running. Continue?`;
+        yes.textContent = 'Continue';
+        no.textContent = 'Start fresh';
+        banner.style.display = 'flex';
+        const handleYes = () => {
+          banner.style.display = 'none';
+          go.disabled = true;
+          setStatus('running', 'Listening. Re-attached to the job.');
+          pollJob(saved.job_id);
+        };
+        const handleNo = () => { banner.style.display = 'none'; clearResume(); };
+        yes.onclick = handleYes; no.onclick = handleNo;
+        return;
+      }
+      // 'error' or anything else: just clear silently
+      clearResume();
+    }
+    tryResumeJob();
 
     function dismissDonate() { donateModal.classList.add('hidden'); renderResult(lastResultJob); }
     $('skipDonate').addEventListener('click', dismissDonate);
@@ -441,7 +621,7 @@
     function renderResult(j) {
       if (!j) return;
       resultcard.classList.remove('hidden');
-      meta.textContent = `Source: ${j.source_label} · ${j.result.tracks.length} identified · ${j.result.unknown_segments.length} unidentified segments`;
+      meta.textContent = `${j.source_label} • ${j.result.tracks.length} tracks named • ${j.result.unknown_segments.length} unnamed gaps`;
 
       const items = [];
       for (const t of j.result.tracks) items.push({ kind: 'track', start: t.start_sec, ...t });
@@ -455,21 +635,19 @@
         if (it.kind === 'track') {
           row.innerHTML = `
             <div class="ts">${fmtHMS(it.start)}</div>
-            <div class="title-line"><span class="artist">${escape(it.artist)}</span> ${it.artist && it.title ? '—' : ''} <span class="title">${escape(it.title)}</span></div>
-            <div class="src-tag">${escape(it.source)}</div>
+            <div class="title-line"><span class="artist">${escape(it.artist)}</span> ${it.artist && it.title ? '-' : ''} <span class="title">${escape(it.title)}</span></div>
           `;
         } else {
           row.innerHTML = `
             <div class="ts">${fmtHMS(it.start)}</div>
-            <div class="title-line unknown">[unidentified ${fmtHMS(it.start)}–${fmtHMS(it.end)}]</div>
-            <div class="src-tag"></div>
+            <div class="title-line unknown">[unidentified ${fmtHMS(it.start)} to ${fmtHMS(it.end)}]</div>
           `;
         }
         tracklist.appendChild(row);
       }
 
       const txt = items.map(it => it.kind === 'track'
-        ? `${fmtHMS(it.start)}  ${(it.artist ? it.artist + ' - ' : '')}${it.title}  [${it.source}]`
+        ? `${fmtHMS(it.start)}  ${(it.artist ? it.artist + ' - ' : '')}${it.title}`
         : `${fmtHMS(it.start)}  [unidentified: ${fmtHMS(it.start)}-${fmtHMS(it.end)}]`
       ).join('\n');
       const jsonStr = JSON.stringify(j.result, null, 2);
