@@ -22,7 +22,7 @@ def smooth_gaps(
     reranked: list[RerankedResult],
     unknown_segments: list[tuple[float, float]],
     *,
-    max_gap_secs: float = 60.0,
+    max_gap_secs: float = 90.0,
 ) -> tuple[list[RerankedResult], list[tuple[float, float]]]:
     """Fill an unknown segment when both temporal neighbors agree.
 
@@ -31,8 +31,11 @@ def smooth_gaps(
     Rules (intentionally conservative):
     - Unknown is rescued only if BOTH temporal neighbors exist and identify
       the same artist+title.
-    - Unknown must be no longer than `max_gap_secs` — a 5-minute silent gap
-      is not a single track held; that's two tracks with a break in between.
+    - Unknown must be no longer than `max_gap_secs` — a long silent gap is
+      not a single track held; that's two tracks with a break in between.
+      Defaults to 90s to match MAX_SEGMENT_GAP_SECS so a held track that
+      the segmenter capped at 90s can still be rescued when its neighbors
+      agree (the old 60s default left 61-90s sandwiched gaps stranded).
     - Rescued segments are tagged `source='smoothed:<original_source>'` so
       output consumers can tell they're inferred, not fingerprinted.
     """

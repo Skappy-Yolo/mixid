@@ -187,6 +187,52 @@ def parse_untimed_tracklist(text: str, source: str) -> list[TracklistEntry]:
     ]
 
 
+# Chapter titles that aren't tracks — skip these when reading native chapters.
+_GENERIC_CHAPTER = re.compile(
+    r"^\s*(intro|outro|id|id\s*[-–—]\s*id|outro\s*/\s*id|tracklist|track\s*list|"
+    r"interlude|skit|mix|start|end|warm[\s-]*up|drop|break|transition|"
+    r"thanks?( for watching)?|subscribe|like\s*&?\s*subscribe)\s*$",
+    re.I,
+)
+_LEADING_TRACK_NUM = re.compile(r"^\s*\d{1,3}\s*[.\)\-–—]\s*")
+
+
+def parse_chapters(meta: dict, source: str) -> list[TracklistEntry]:
+    """Parse yt-dlp's `chapters` array into timed tracklist entries.
+
+    yt-dlp populates `chapters` from a video's native chapter markers.
+    YouTube auto-promotes "0:00 Title" description lines into native
+    chapters when there are 3+ (first at 0:00), so many DJ-mix uploads
+    expose a free, already-timed, structured tracklist here — more
+    reliable than regex-parsing the free-text description.
+
+    Each chapter is {start_time, end_time, title}. Generic non-track
+    titles (Intro, Outro, ID, "thanks for watching", etc.) are skipped.
+    """
+    chapters = meta.get("chapters") or []
+    if not isinstance(chapters, list):
+        return []
+    entries: list[TracklistEntry] = []
+    for ch in chapters:
+        if not isinstance(ch, dict):
+            continue
+        title_raw = (ch.get("title") or "").strip()
+        start = ch.get("start_time")
+        if not title_raw or start is None:
+            continue
+        if _GENERIC_CHAPTER.match(title_raw):
+            continue
+        # Drop a leading track number like "01." / "1)" / "1 -" before splitting.
+        title_raw = _LEADING_TRACK_NUM.sub("", title_raw)
+        artist, title = _split_artist_title(title_raw)
+        if not title:
+            continue
+        entries.append(
+            TracklistEntry(start_sec=float(start), artist=artist, title=title, source=source)
+        )
+    return entries
+
+
 # ── yt-dlp metadata fetch (description, title) ──────────────────────────────
 
 # Tiny in-process cache so the density gate in run.py and the
@@ -334,6 +380,9 @@ def fetch_mixesdb_page(page_title: str) -> str | None:
 SOURCE_PRIORITY: dict[str, int] = {
     "1001tracklists": 4,
     "mixesdb": 3,
+    "youtube_chapters": 2,
+    "soundcloud_chapters": 2,
+    "mixcloud_chapters": 2,
     "youtube_description": 2,
     "soundcloud_description": 2,
     "mixcloud_description": 2,
@@ -415,13 +464,23 @@ def try_url_shortcut(url: str, ytdlp_exe: str = "yt-dlp") -> list[TracklistEntry
         if meta:
             inferred_title = (meta.get("title") or "").strip()
             desc = meta.get("description") or ""
+            # Collect BOTH native chapters and the description timestamps,
+            # then let _merge_and_dedup arbitrate. On YouTube the two are
+            # usually the same data (the 30s-window dedup collapses the
+            # overlap, chapters win the tie on equal priority via insertion
+            # order). But when they DIVERGE — a mix with 3 chapter pins but a
+            # 25-line description tracklist, common on long Afrobeats sets —
+            # this keeps every description-only track instead of letting one
+            # surviving chapter suppress the whole list.
+            chapter_entries = parse_chapters(meta, source=f"{src}_chapters")
+            all_entries.extend(chapter_entries)
             description_entries = parse_timestamped_tracklist(
                 desc, source=f"{src}_description"
             )
             all_entries.extend(description_entries)
-            # Only try untimed parser if no timed lines were found; untimed
-            # entries in the SAME description are usually redundant overflow.
-            if not description_entries:
+            # Untimed parser only when NO timed source produced anything —
+            # i.e. the description lists tracks but without timestamps.
+            if not chapter_entries and not description_entries:
                 all_entries.extend(
                     parse_untimed_tracklist(desc, source=f"{src}_description_untimed")
                 )

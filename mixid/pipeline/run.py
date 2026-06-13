@@ -35,6 +35,7 @@ from mixid.pipeline import (
     fingerprint,
     library_match,
     local_demucs,
+    lyrics,
     reactive_lookup,
     reranker,
     sample_picker,
@@ -235,22 +236,29 @@ def _demucs_retry_for_unknowns(
 def _should_auto_demucs(pools: list, unknown_segments: list[tuple[float, float]]) -> bool:
     """Decide whether to auto-trigger Demucs based on Tier-1 outcomes.
 
-    Triggers when more than half of the segments came back unidentified —
-    that's the case where stem isolation actually has a chance to rescue
-    enough tracks to be worth the runtime. For mixes that already match
-    well (e.g., URL shortcut hit, clean studio recording), Demucs adds
-    little; skip the slow stage.
+    Triggers when EITHER a large fraction of segments came back
+    unidentified, OR there are at least a few unknowns in absolute
+    terms. The absolute-count gate matters: a clean mix with ~10 misses
+    out of ~40 segments is only 25% unknown, so the old fraction-only
+    >50% gate never fired on exactly the case stem isolation rescues
+    best. The per-unknown-segment Demucs retry is capped (config.
+    DEMUCS_MAX_SEGMENTS) and only separates the short unknown snippets,
+    so it's minutes, not the whole-mix hours people fear.
 
     Always returns False if MIXID_DISABLE_DEMUCS env var is set
-    (cloud deployments where Demucs runtime would block other users).
+    (cloud deployments where Demucs runtime would block other users)
+    or if Demucs isn't installed.
     """
     import os
     if os.getenv("MIXID_DISABLE_DEMUCS", "").lower() in ("1", "true", "yes"):
         return False
+    if not local_demucs.is_available():
+        return False
     total = len(pools) + len(unknown_segments)
     if total == 0:
         return False
-    return len(unknown_segments) / total > 0.5 and local_demucs.is_available()
+    n_unknown = len(unknown_segments)
+    return (n_unknown / total > 0.5) or (n_unknown >= 3)
 
 
 def run(
@@ -404,6 +412,25 @@ def run(
                     artist=rm.artist, title=rm.title, score=rm.score,
                     source=rm.source,
                     extra={"preview_url": rm.preview_url, "transcript": rm.transcript},
+                ))
+
+        # 4g. Genius lyric search — name-level fallback for vocal tracks that
+        # Shazam/AcoustID/reactive all missed (niche/Afrobeats especially).
+        # Unverified by fingerprint, so it enters as a LOW-confidence candidate
+        # (0.55) that the constrained re-ranker can accept or reject — it can
+        # only pick from candidates, never hallucinate. Skipped unless a free
+        # GENIUS_API_KEY is configured.
+        if (
+            (not candidates or max(c.score for c in candidates) < 0.85)
+            and config.GENIUS_API_KEY
+            and lyrics._whisper_available()
+        ):
+            lm = lyrics.identify_via_lyrics(s.samples, s.sample_rate)
+            if lm is not None and (lm.artist or lm.title):
+                candidates.append(reranker.Candidate(
+                    artist=lm.artist, title=lm.title, score=0.55,
+                    source="lyrics:genius",
+                    extra={"genius_id": lm.genius_id, "transcript": lm.transcript},
                 ))
 
         if not candidates:

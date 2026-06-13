@@ -80,7 +80,9 @@ def transcribe_sample(samples: np.ndarray, sr: int, model_name: str = "tiny") ->
     # Pad or trim to 30 seconds — Whisper's expected input length
     audio = whisper.pad_or_trim(samples)
     mel = whisper.log_mel_spectrogram(audio).to(model.device)
-    options = whisper.DecodingOptions(language="en", without_timestamps=True, fp16=False)
+    # language=None → auto-detect. Afrobeats/Pidgin/French-Afro lyrics get
+    # mangled when forced to English, which kills the Genius search.
+    options = whisper.DecodingOptions(language=None, without_timestamps=True, fp16=False)
     result = whisper.decode(model, mel, options)
     return (result.text or "").strip()
 

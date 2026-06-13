@@ -71,3 +71,17 @@ def test_filled_score_is_min_of_neighbors():
     out, _ = smoother.smooth_gaps(reranked, [(30.0, 60.0)])
     filled = [r for r in out if r.start_sec == 30.0][0]
     assert filled.score == 0.72  # be honest about confidence
+
+
+def test_default_gap_rescues_up_to_segment_cap():
+    """The default max_gap (90s, matching MAX_SEGMENT_GAP_SECS) rescues a
+    75s sandwiched gap that the old 60s default would have stranded."""
+    reranked = [
+        _r(0, 0, 30, "A", "X"),
+        _r(2, 105, 135, "A", "X"),
+    ]
+    unknowns = [(30.0, 105.0)]  # 75s gap — between the old 60 and new 90 default
+    out, rem = smoother.smooth_gaps(reranked, unknowns)  # no explicit max_gap
+    assert rem == []
+    filled = [r for r in out if r.start_sec == 30.0][0]
+    assert filled.artist == "A" and filled.title == "X"

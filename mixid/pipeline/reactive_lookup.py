@@ -101,7 +101,10 @@ def transcribe(samples: np.ndarray, sr: int, model_name: str = "tiny") -> str:
     samples = samples.astype(np.float32)
     audio = whisper.pad_or_trim(samples)
     mel = whisper.log_mel_spectrogram(audio).to(model.device)
-    opts = whisper.DecodingOptions(language="en", without_timestamps=True, fp16=False)
+    # language=None lets Whisper auto-detect. Forcing English garbled
+    # Yoruba/Pidgin/French-Afro vocals into junk phrases — exactly the
+    # niche tracks this reactive path is meant to rescue.
+    opts = whisper.DecodingOptions(language=None, without_timestamps=True, fp16=False)
     return (whisper.decode(model, mel, opts).text or "").strip()
 
 
