@@ -41,8 +41,48 @@ class DownloadedAudio:
     source_host: str
 
 
+class PlatformBlockedError(RuntimeError):
+    """The host (usually YouTube) refused our server's request.
+
+    Almost always means YouTube is blocking the datacenter IP the app
+    runs on — a free-cloud-host problem, not a bug. The caller should
+    steer the user to SoundCloud/Mixcloud/Audiomack or a file upload.
+    """
+
+    def __init__(self, platform: str, raw: str = ""):
+        self.platform = platform
+        self.raw = raw
+        super().__init__(f"{platform} blocked the request")
+
+
+# Signatures that mean "the platform refused us / blocked the IP" rather
+# than "the URL is bad". YouTube drops datacenter IPs with an SSL EOF or
+# a bot-check; these strings show up in yt-dlp's stderr when it happens.
+_BLOCK_SIGNS = (
+    "unexpected_eof_while_reading",
+    "unable to download api page",
+    "sign in to confirm",
+    "confirm you're not a bot",
+    "http error 403",
+    "failed to extract any player response",
+    "not available on this app",
+    "the read operation timed out",
+)
+
+# YouTube player clients to try, in order. Different InnerTube clients
+# get blocked differently from datacenter IPs; rotating through a few
+# recovers downloads that the default 'web' client can't get. This is a
+# moving target — YouTube tightens it over time — so it's best-effort.
+_YT_PLAYER_CLIENTS = "tv,mweb,web_safari,android"
+
+
 def is_supported_url(url: str) -> bool:
     return any(h in url.lower() for h in SUPPORTED_HOSTS)
+
+
+def _is_youtube(url: str) -> bool:
+    u = url.lower()
+    return "youtube.com" in u or "youtu.be" in u
 
 
 def _ytdlp_path() -> str:
@@ -84,8 +124,13 @@ def download(url: str, output_dir: Path | str | None = None) -> DownloadedAudio:
         "--audio-quality", "0",   # best
         "--print-json",
         "-o", template,
-        url,
     ]
+    # Rotate YouTube player clients — recovers downloads the default 'web'
+    # client can't get from a blocked datacenter IP. Ignored by other
+    # extractors, but we only add it for YouTube to keep things clean.
+    if _is_youtube(url):
+        cmd += ["--extractor-args", f"youtube:player_client={_YT_PLAYER_CLIENTS}"]
+    cmd.append(url)
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     except FileNotFoundError as e:
@@ -93,7 +138,11 @@ def download(url: str, output_dir: Path | str | None = None) -> DownloadedAudio:
     if res.returncode != 0:
         # yt-dlp can succeed at download but exit nonzero on warnings; check for stdout JSON
         if not res.stdout.strip():
-            raise RuntimeError(f"yt-dlp failed: {res.stderr[:500]}")
+            stderr = res.stderr or ""
+            if any(sign in stderr.lower() for sign in _BLOCK_SIGNS):
+                platform = "YouTube" if _is_youtube(url) else _extract_host(url)
+                raise PlatformBlockedError(platform, raw=stderr[:300])
+            raise RuntimeError(f"yt-dlp failed: {stderr[:500]}")
     # Last JSON line on stdout has metadata
     import json as _json
     meta = None

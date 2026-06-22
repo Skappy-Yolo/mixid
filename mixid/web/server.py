@@ -301,8 +301,16 @@ def create_app() -> FastAPI:
                 )
             try:
                 dl = url_input.download(url or "")
+            except url_input.PlatformBlockedError as exc:
+                raise HTTPException(
+                    502,
+                    f"{exc.platform} is blocking our server right now (free cloud "
+                    f"hosts get rate-limited by {exc.platform}, it's not your link). "
+                    f"Paste the SoundCloud, Mixcloud, or Audiomack version of this "
+                    f"mix and it'll work, or upload the file directly.",
+                ) from exc
             except Exception as exc:
-                raise HTTPException(502, f"URL download failed: {exc}") from exc
+                raise HTTPException(502, f"Couldn't fetch that link: {exc}") from exc
             audio_path = dl.path
             source_kind = "url"
             source_label = dl.title or (url or "")

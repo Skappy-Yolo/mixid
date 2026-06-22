@@ -44,8 +44,14 @@ RUN pip install --no-cache-dir \
     "uvicorn[standard]" \
     python-multipart \
     sse-starlette \
-    yt-dlp \
     openai-whisper
+
+# yt-dlp: install the NIGHTLY channel, not the stable PyPI release. YouTube
+# changes its internal API constantly and the nightly tracks those fixes
+# weeks ahead of stable — important because this runs from a datacenter IP
+# that YouTube actively throttles. Rebuild the Space to pull a fresh nightly
+# when YouTube downloads start failing again.
+RUN pip install --no-cache-dir -U --pre "yt-dlp[default]"
 
 # Now the application code
 COPY mixid /app/mixid
